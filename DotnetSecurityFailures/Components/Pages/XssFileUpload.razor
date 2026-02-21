@@ -1,0 +1,328 @@
+@page "/vulnerabilities/xss-file-upload"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XSS File Upload - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xss-file-upload" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>File Upload with XSS:</h6>
+        
+        <div class="mb-3">
+            <label class="form-label">Filename:</label>
+            <input type="text" 
+                   class="form-control" 
+                   @bind="filename" 
+                   placeholder="document.html" />
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">File Content:</label>
+            <textarea class="form-control" 
+                      rows="4" 
+                      @bind="fileContent"
+                      placeholder="<h1>My Document</h1>"></textarea>
+        </div>
+        
+        <button class="btn btn-primary" @onclick="UploadFile" disabled="@isUploading">
+            @(isUploading ? "Uploading..." : "Upload File")
+        </button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(uploadedFileId))
+        {
+            <div class="alert alert-success mt-3">
+                <strong>File uploaded:</strong> @filename
+                <br />
+                <a href="@fileViewUrl" 
+                   target="_blank"
+                   class="btn btn-sm btn-warning mt-2">
+                    Open file in new tab
+                </a>
+                <br />
+                <small class="text-muted">
+                    File will be served as text/html - scripts will execute!
+                </small>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these attacks:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer; color: #0d6efd;" 
+                              @onclick="() => SetAttack(attack)">
+                            @attack.GetInputAsString()
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            File upload XSS occurs when applications allow users to upload files that contain 
+            executable content (HTML, SVG, etc.) and serve them back without proper validation 
+            or with incorrect Content-Type headers.
+        </p>
+        
+        <h6 class="mt-3">Attack Scenario:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker uploads: invoice.pdf.html
+   Content: &lt;script&gt;alert('XSS')&lt;/script&gt;
+
+2. Server accepts file without validation
+3. File served as: Content-Type: text/html
+4. User clicks link - JavaScript executes!</code></pre>
+
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Stored XSS</strong> - Script persists and affects all users</li>
+            <li><strong>Session hijacking</strong> - Steal authentication cookies</li>
+            <li><strong>API data theft</strong> - Access user's data via authenticated requests</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against File Upload XSS:</h5>
+        <ol>
+            <li><strong>Whitelist file extensions:</strong> Only allow necessary types</li>
+            <li><strong>Check uplopaded file types:</strong> The most reliable way is to read magic bytes</li>
+            <li><strong>Generate random filenames:</strong> Use GUID instead of user names</li>
+            <li><strong>Set correct Content-Type:</strong> Never serve as text/html</li>
+            <li><strong>Use Content-Disposition: attachment</strong></li>
+            <li><strong>X-Content-Type-Options: nosniff</strong></li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Multi-layer file validation
+// Install: dotnet add package FileSignatures
+using FileSignatures;
+using FileSignatures.Formats;
+
+[HttpPost("upload]
+public IActionResult Upload([FromBody] FileUploadRequest request)
+{
+    // 1. Whitelist allowed extensions
+    var allowedExtensions = new[] { ".jpg", ".png", ".pdf" };
+    var extension = Path.GetExtension(request.Filename).ToLowerInvariant();
+    if (!allowedExtensions.Contains(extension))
+        return BadRequest("File type not allowed;
+    
+    // 2. Validate magic bytes using FileSignatures library
+    var fileBytes = Convert.FromBase64String(request.ContentBase64);
+    var inspector = new FileFormatInspector();
+    var format = inspector.DetermineFileFormat(new MemoryStream(fileBytes));
+    
+    if (format == null)
+        return BadRequest("Unable to determine file type;
+    
+    // Verify format matches extension
+    var isValidFormat = (extension, format) switch
+    {
+        (".jpg", Jpeg) => true,
+        (".png", Png) => true,
+        (".pdf", Pdf) => true,
+        _ => false
+    };
+    
+    if (!isValidFormat)
+        return BadRequest("File content does not match extension;
+    
+    // Generate safe random filename
+    var fileId = Guid.NewGuid().ToString();
+    var safeFilename = $"{fileId}{extension}";
+    var filePath = Path.Combine(UploadDirectory, safeFilename);
+    
+    File.WriteAllBytes(filePath, fileBytes);
+    return Ok(new { fileId });
+}
+
+// CORRECT: Serve with safe Content-Type and security headers
+[HttpGet("view/{fileId}]
+public IActionResult ViewFile(string fileId)
+{
+    if (!UploadedFiles.TryGetValue(fileId, out var uploadedFile))
+        return NotFound();
+    
+    var fileBytes = File.ReadAllBytes(uploadedFile.FilePath);
+    
+    // Prevent browser from MIME-sniffing (e.g., treating text as HTML)
+    Response.Headers["X-Content-Type-Options"] = "nosniff";
+    
+    // Force download instead of displaying in browser
+    Response.Headers["Content-Disposition"] = "attachment; filename=\"file.txt\"";
+    
+    // Block all resources from loading (scripts, styles, etc.)
+    Response.Headers["Content-Security-Policy"] = "default-src 'none'";
+    
+    // Serve as plain text or force download
+    return File(fileBytes, "text/plain;
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: No file validation on upload
+[HttpPost("upload]
+public IActionResult Upload([FromBody] FileUploadRequest request)
+{
+    var fileId = Guid.NewGuid().ToString();
+    var filePath = Path.Combine(UploadDirectory, fileId);
+    
+    // VULNERABLE: Save any content without validation
+    File.WriteAllText(filePath, request.Content);
+    return Ok(new { fileId });
+}
+
+// DANGEROUS: Serves files as text/html without validation
+[HttpGet("view/{fileId}]
+public IActionResult ViewFile(string fileId)
+{
+    if (!UploadedFiles.TryGetValue(fileId, out var uploadedFile))
+        return NotFound();
+    
+    var fileBytes = File.ReadAllBytes(uploadedFile.FilePath);
+    
+    // VULNERABLE: Always serves as text/html!
+    // Scripts in uploaded files will execute in user's browser
+    return File(fileBytes, "text/html;
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string filename = "";
+    private string fileContent = "";
+    private bool isUploading = false;
+    private string? uploadedFileId;
+    private string? fileViewUrl;
+    private string? errorMessage;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xss-file-upload")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xss-file-upload");
+    }
+
+    private async Task UploadFile()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(filename) || string.IsNullOrWhiteSpace(fileContent))
+        {
+            errorMessage = "Please provide both filename and content";
+            return;
+        }
+
+        isUploading = true;
+
+        try
+        {
+            var baseUrl = Navigation.BaseUri.TrimEnd('/');
+            var response = await Http.PostAsJsonAsync($"{baseUrl}/api/files/upload", new
+            {
+                filename,
+                content = fileContent
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<UploadResponse>();
+                if (result != null)
+                {
+                    uploadedFileId = result.FileId;
+                    fileViewUrl = $"{baseUrl}{result.ViewUrl}";
+                    
+                    AnalyzeAttack();
+                }
+            }
+            else
+            {
+                errorMessage = $"Upload failed: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void AnalyzeAttack()
+    {
+        var predefinedAttack = vulnerability.PredefinedAttacks
+            .FirstOrDefault(a => a.GetInputAsString() == filename && a.GetInput2AsString() == fileContent);
+        
+        if (predefinedAttack != null)
+        {
+            attackAnalysis = predefinedAttack.Description;
+        }
+        else
+        {
+            var xssPatterns = new[] { "<script", "<img", "<svg", "<iframe", "onerror", "onload", "javascript:" };
+            var containsXss = xssPatterns.Any(p => fileContent.ToLower().Contains(p));
+            
+            if (containsXss)
+            {
+                attackAnalysis = "POTENTIAL XSS DETECTED!\n\n" +
+                               "The file content contains HTML/JavaScript that will execute when opened.\n\n" +
+                               "IMPACT:\n" +
+                               "- Arbitrary JavaScript execution\n" +
+                               "- Cookie and session token theft\n" +
+                               "- API data exfiltration";
+            }
+            else
+            {
+                attackAnalysis = "Safe content - no XSS patterns detected.";
+            }
+        }
+    }
+
+    private void SetAttack(PredefinedAttack attack)
+    {
+        filename = attack.GetInputAsString();
+        fileContent = attack.GetInput2AsString();
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        uploadedFileId = null;
+        fileViewUrl = null;
+        errorMessage = null;
+        attackAnalysis = null;
+    }
+
+    private class UploadResponse
+    {
+        public bool Success { get; set; }
+        public string FileId { get; set; } = "";
+        public string Filename { get; set; } = "";
+        public string ViewUrl { get; set; } = "";
+    }
+}

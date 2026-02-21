@@ -1,0 +1,172 @@
+@*
+    Vulnerability: SQL Injection
+    Slug: sql-injection
+    Category: Injection
+    Severity: Critical
+    
+    Service: VulnerableDatabaseService
+    
+    Description: Executing arbitrary SQL commands through string concatenation in queries
+*@
+@page "/vulnerabilities/sql-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject VulnerableDatabaseService DbService
+
+<PageTitle>@vulnerability.Title - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="@Slug" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Search active user by name:</h6>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="searchTerm" 
+                   placeholder="Enter username" />
+            <button class="btn btn-primary" @onclick="SearchUser">Search</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(sqlQuery))
+        {
+            <div class="alert alert-warning">
+                <strong>Executed SQL:</strong>
+                <pre class="mb-0 mt-2"><code>@sqlQuery</code></pre>
+            </div>
+        }
+
+        @if (searchResult != null)
+        {
+            <div class="alert alert-info" style="white-space: pre-wrap; word-wrap: break-word;">
+                <strong>Result:</strong>
+                <div>@searchResult</div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => SetSearchTerm("admin"))">admin</code> - normal search (returns 1 user)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetSearchTerm("xxx' OR '1'='1' --"))">xxx' OR '1'='1' --</code> - comments out rest, returns all users</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetSearchTerm("xxx' UNION SELECT Id, SecretKey, SecretValue, 'SECRET', 1 FROM Secrets --"))">xxx' UNION SELECT Id, SecretKey, SecretValue, 'SECRET', 1 FROM Secrets --</code> - extracts secrets table</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>The code concatenates user input directly into SQL queries. This allows attackers to inject malicious SQL commands.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: admin' OR '1'='1
+
+Query becomes:
+SELECT * FROM Users 
+WHERE Username = 'admin' OR '1'='1' AND IsActive = 1
+
+Result: Returns ALL users (condition always true)</code></pre>
+
+        <h6 class="mt-3">UNION injection example:</h6>
+        <pre class="bg-light p-2 small"><code>Input: xxx' UNION SELECT Id, SecretKey, SecretValue, 'SECRET', 1 FROM Secrets --
+
+Result: Extracts data from Secrets table!
+- ID: Secret ID number
+- Username: Shows SecretKey (API_KEY, DB_PASSWORD, etc)
+- Email: Shows SecretValue (actual secret values)
+- Role: Shows 'SECRET' marker
+- IsActive: Shows 1</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Authentication bypass</strong> - login without credentials</li>
+            <li><strong>Data extraction</strong> - steal passwords, credit cards, secrets</li>
+            <li><strong>Data modification</strong> - change prices, balances</li>
+            <li><strong>Data deletion</strong> - drop tables, delete records</li>
+            <li><strong>Privilege escalation</strong> - become admin</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against SQL Injection:</h5>
+        <ol>
+            <li><strong>Parameterized queries</strong> - ALWAYS use parameters, never concatenate</li>
+            <li><strong>ORM (Entity Framework)</strong> - automatic parameterization and type safety</li>
+            <li><strong>Stored Procedures</strong> - with parameters only</li>
+            <li><strong>Input validation</strong> - whitelist allowed characters (defense in depth)</li>
+            <li><strong>Principle of least privilege</strong> - DB user with minimal permissions</li>
+            <li><strong>WAF (Web Application Firewall)</strong> - additional protection layer</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Parameterized queries
+var sql = \"SELECT * FROM Users \" +
+          \"WHERE Username = @Username AND IsActive = 1\";
+
+using var command = _connection.CreateCommand();
+command.CommandText = sql;
+command.Parameters.AddWithValue(\"@Username\", username);
+using var reader = command.ExecuteReader();
+
+// Input: admin' OR '1'='1
+// Username parameter = \"admin' OR '1'='1\" (treated as literal string)
+// Query safely searches for username literally matching \"admin' OR '1'='1\"
+// Returns nothing - attack prevented!
+
+// Even better: Entity Framework Core
+return await dbContext.Users
+    .Where(u => u.Username == username && u.IsActive)
+    .ToListAsync();
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: String concatenation
+var sql = $\"SELECT * FROM Users \" +
+          $\"WHERE Username = '{username}' AND IsActive = 1\";
+
+using var command = _connection.CreateCommand();
+command.CommandText = sql;
+using var reader = command.ExecuteReader();
+
+// Input: admin' OR '1'='1
+// Resulting query:
+// SELECT * FROM Users WHERE Username = 'admin' OR '1'='1' AND IsActive = 1
+// Returns ALL users - security bypassed!
+""";
+    [Parameter]
+    public string Slug { get; set; } = "sql-injection";
+    
+    private Vulnerability vulnerability = null!;
+    
+    // Fields and properties
+    private string searchTerm = "";
+    private string? sqlQuery;
+    private string? searchResult;
+
+    // Lifecycle methods
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug(Slug) 
+            ?? throw new InvalidOperationException($"Vulnerability not found: {Slug}");
+    }
+
+    // Event handlers
+    private void SearchUser()
+    {
+        searchResult = null;
+        sqlQuery = null;
+
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            searchResult = "Enter a username";
+            return;
+        }
+
+        sqlQuery = DbService.GetExecutedQuery(searchTerm);
+        searchResult = DbService.SearchUserVulnerable(searchTerm);
+    }
+
+    private void SetSearchTerm(string term)
+    {
+        searchTerm = term;
+        searchResult = null;
+        sqlQuery = null;
+    }
+}

@@ -1,0 +1,101 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<catalog>
+	<!-- Public products -->
+	<product id="1">
+		<name>Laptop Pro 15</name>
+		<price>1299</price>
+		<cost>800</cost>
+		<stock>45</stock>
+		<supplier>TechCorp International</supplier>
+		<margin>499</margin>
+	</product>
+
+	<product id="2">
+		<name>Wireless Mouse</name>
+		<price>29</price>
+		<cost>12</cost>
+		<stock>150</stock>
+		<supplier>AccessoriesCo</supplier>
+		<margin>17</margin>
+	</product>
+
+	<product id="3">
+		<name>Mechanical Keyboard</name>
+		<price>89</price>
+		<cost>45</cost>
+		<stock>30</stock>
+		<supplier>KeyboardsRUs</supplier>
+		<margin>44</margin>
+	</product>
+
+	<product id="4">
+		<name>USB-C Hub</name>
+		<price>49</price>
+		<cost>20</cost>
+		<stock>75</stock>
+		<supplier>ConnectTech</supplier>
+		<margin>29</margin>
+	</product>
+
+	<product id="5">
+		<name>Laptop</name>
+		<price>999</price>
+		<cost>600</cost>
+		<stock>25</stock>
+		<supplier>LaptopsDirect</supplier>
+		<margin>399</margin>
+	</product>
+
+	<!-- Sensitive admin credentials (should never be accessible!) -->
+	<admin>
+		<username>admin</username>
+		<password>P@ssw0rd123</password>
+		<apiKey>sk-prod-abc123xyz789</apiKey>
+		<role>superadmin</role>
+		<email>admin@company.com</email>
+	</admin>
+
+	<!-- Database connection info (should never be accessible!) -->
+	<database>
+		<server>prod-db.company.com</server>
+		<username>sa</username>
+		<password>DbP@ss!2024</password>
+		<database>SalesDB</database>
+		<connection>Server=prod-db.company.com;Database=SalesDB;User Id=sa;Password=DbP@ss!2024;</connection>
+	</database>
+
+	<!-- Internal user data (should never be accessible!) -->
+	<users>
+		<user id="1">
+			<name>John Doe</name>
+			<email>john.doe@company.com</email>
+			<ssn>123-45-6789</ssn>
+			<creditCard>4532-1234-5678-9012</creditCard>
+			<salary>85000</salary>
+		</user>
+		<user id="2">
+			<name>Jane Smith</name>
+			<email>jane.smith@company.com</email>
+			<ssn>987-65-4321</ssn>
+			<creditCard>5412-9876-5432-1098</creditCard>
+			<salary>92000</salary>
+		</user>
+	</users>
+
+	<!-- API credentials (should never be accessible!) -->
+	<credentials>
+		<stripe>
+			<apiKey>sk_live_51HabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ</apiKey>
+			<webhookSecret>whsec_abcdefghijklmnopqrstuvwxyz123456</webhookSecret>
+		</stripe>
+		<aws>
+			<accessKeyId>AKIAIOSFODNN7EXAMPLE</accessKeyId>
+			<secretAccessKey>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secretAccessKey>
+			<region>us-east-1</region>
+		</aws>
+		<jwt>
+			<secret>super-secret-jwt-key-do-not-expose-12345</secret>
+			<issuer>company.com</issuer>
+		</jwt>
+	</credentials>
+</catalog>

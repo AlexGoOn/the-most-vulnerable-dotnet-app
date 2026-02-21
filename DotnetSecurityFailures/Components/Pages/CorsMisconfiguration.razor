@@ -1,0 +1,209 @@
+@page "/vulnerabilities/cors-misconfiguration"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JsRuntime
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>CORS Misconfiguration - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="cors-misconfiguration" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>CORS Attack Demonstration:</h6>
+        <p class="small text-muted">Exploit CORS misconfiguration from a different origin</p>
+
+        <div class="alert alert-danger">
+            <strong>⚠️ Important: Restart the application after making changes!</strong><br/>
+            <small>The vulnerable CORS policy is now configured. You need to restart the app for changes to take effect.</small>
+        </div>
+
+        <div class="alert alert-info">
+            <strong>How to reproduce this vulnerability:</strong>
+            <ol class="mb-0 small">
+                <li>Click the button below to open attacker's website (different port/origin)</li>
+                <li>On the attacker's page, click "Steal Victim's Data"</li>
+                <li>The attack should succeed because of misconfigured CORS policy</li>
+                <li>Check browser console (F12) for detailed CORS logs</li>
+            </ol>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>Current Configuration:</strong><br/>
+            <small>
+                • Main app: <code>https://localhost:7124</code><br/>
+                • Attacker site: <code>http://localhost:5001</code><br/>
+                • CORS Policy: <code>VulnerablePolicy</code> (SetIsOriginAllowed = true)<br/>
+                • Target endpoint: <code>/api/user/balance</code>
+            </small>
+        </div>
+
+        <button class="btn btn-danger btn-lg w-100 mb-3" @onclick="OpenAttackerSite">
+            Open Attacker's Website (Port 5001)
+        </button>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>CORS misconfiguration</strong> occurs when servers allow cross-origin requests 
+            from untrusted domains. This bypasses the Same-Origin Policy, allowing malicious websites 
+            to read sensitive data from your API using the victim's credentials.
+        </p>
+
+        <h6 class="mt-3">Same-Origin Policy (SOP):</h6>
+        <pre class="bg-light p-2 small"><code>Same origin:
+  https://example.com:443/page1
+  https://example.com:443/page2  ? Same
+
+Different origins:
+  https://example.com:443
+  https://evil.com:443           ? Different domain
+  http://example.com:443         ? Different protocol
+  https://example.com:8080       ? Different port
+
+Without CORS: Browser blocks cross-origin requests
+With CORS misconfiguration: Attacker bypasses SOP!</code></pre>
+
+        <h6 class="mt-3">How CORS attacks work:</h6>
+        <pre class="bg-light p-2 small"><code>1. Victim visits attacker's website (http://localhost:5001)
+2. JavaScript makes request to API (https://localhost:7124)
+3. Browser includes victim's cookies automatically
+4. Server checks Origin header: "http://localhost:5001"
+5. Server reflects Origin in Access-Control-Allow-Origin
+6. Server sets Access-Control-Allow-Credentials: true
+7. Browser allows attacker to read the response
+8. Attacker extracts sensitive data (balance, API keys)
+
+Result: Private user data stolen!</code></pre>
+
+        <h6 class="mt-3">Common misconfigurations:</h6>
+        <ul>
+            <li><strong>Reflecting Origin</strong> - accepts any origin without validation</li>
+            <li><strong>Wildcard with credentials</strong> - trying to use <code>*</code> with credentials</li>
+            <li><strong>Null origin</strong> - allowing file:// protocols</li>
+            <li><strong>Subdomain bugs</strong> - <code>EndsWith(".example.com")</code> matches <code>evil.example.com.attacker.com</code></li>
+            <li><strong>Regex errors</strong> - improper pattern matching</li>
+        </ul>
+
+        <h6 class="mt-3">Real-world examples:</h6>
+        <ul>
+            <li><strong>2018 - BitTorrent:</strong> Credential theft from uTorrent</li>
+            <li><strong>2019 - Tesla:</strong> API accessible from any origin</li>
+            <li><strong>2021 - Crypto wallets:</strong> Private keys stolen</li>
+            <li><strong>2022 - Facebook:</strong> CORS issues exposed user data</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against CORS Misconfiguration:</h5>
+        <ol>
+            <li>
+                <strong>Don't reflect Origin header without validation</strong>
+            </li>
+            <li>
+                <strong>Don't use <code>AllowAnyOrigin()</code> with credentials</strong>
+            </li>
+            <li>
+                <strong>Whitelist specific origins only</strong>
+            </li>
+            <li>
+                <strong>Use SameSite cookies</strong>
+            </li>
+            <li>
+                <strong>Limit HTTP methods and headers</strong>
+            </li>
+            <li>
+                <strong>Don't allow null origin</strong>
+            </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddCors(options =>
+    {
+        options.AddPolicy("StrictPolicy", policy =>
+        {
+            // SAFE: Explicitly whitelist trusted origins
+            policy.WithOrigins(
+                "https://www.example.com",
+                "https://app.example.com",
+                "https://mobile.example.com
+            .WithMethods("GET", "POST
+            .WithHeaders("Content-Type", "Authorization
+            .AllowCredentials();
+        });
+        
+        // Public API - no credentials, wildcard is safe
+        options.AddPolicy("PublicAPI", policy =>
+        {
+            policy.AllowAnyOrigin() // Safe without credentials
+                  .WithMethods("GET
+                  .WithHeaders("Content-Type;
+            // Never call .AllowCredentials() here!
+        });
+    });
+}
+
+// Apply safe policy to controllers
+[ApiController]
+[Route("api/[controller]]
+[EnableCors("StrictPolicy] // Apply to entire controller
+public class UserController : ControllerBase
+{
+    [HttpGet("balance]
+    public IActionResult GetBalance()
+    {
+        // Only whitelisted origins can access
+        return Ok(GetUserBalance());
+    }
+}
+""";
+    private const string VulnerableCode = """
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddCors(options =>
+    {
+        options.AddPolicy("VulnerablePolicy", policy =>
+        {
+            policy
+                .SetIsOriginAllowed(_ => true) // CRITICAL: ALL origins!
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials(); // With credentials = DANGEROUS!
+        });
+    });
+}
+
+// Applying vulnerable policy to endpoint
+[ApiController]
+[Route("api]
+public class UserController : ControllerBase
+{
+    [HttpGet("user/balance]
+    [EnableCors("VulnerablePolicy] // Uses vulnerable policy
+    public IActionResult GetBalance()
+    {
+        // Returns sensitive data
+        return Ok(new { 
+            username = "john.doe@example.com",
+            accountBalance = 15420.50m,
+            apiKey = "sk_live_51H7xYz..." 
+        });
+    }
+}
+""";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("cors-misconfiguration")
+            ?? throw new InvalidOperationException($"Vulnerability not found: cors-misconfiguration");
+    }
+
+    private async Task OpenAttackerSite()
+    {
+        // Open attacker's site on different port (different origin!) in a new tab
+        var url = "http://localhost:5001";
+        await JsRuntime.InvokeVoidAsync("open", url, "_blank", "noopener,noreferrer");
+    }
+}

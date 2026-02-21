@@ -1,0 +1,260 @@
+@*
+    Vulnerability: Arbitrary File Write
+    Slug: arbitrary-file-write
+    Category: File Operations
+    Severity: Critical
+    
+    Controller: ArbitraryFileWriteController
+    
+    Description: Writing to arbitrary file locations
+*@
+@page "/vulnerabilities/arbitrary-file-write"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject HttpClient HttpClient
+
+<PageTitle>@vulnerability.Title - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="@Slug" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Backup System:</h6>
+        <p class="small text-muted">Save backup files to the server</p>
+
+        <div class="mb-3">
+            <label class="form-label">Filename:</label>
+            <input type="text" class="form-control" @bind="filename" placeholder="backup.txt" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Content:</label>
+            <textarea class="form-control" @bind="content" rows="3" placeholder="Backup data..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" @onclick="SaveFile">
+            Save Backup
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(actualPath))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Actual Path:</strong>
+                <pre class="mb-0 mt-2 small">@actualPath</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these payloads:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetPayload("../evil.txt", "Hacked!")'>../evil.txt</code>
+                    - write outside backups directory
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetPayload("../wwwroot/hack.html", "<h1>Hacked!</h1>")'>../wwwroot/hack.html</code>
+                    - write to web root
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetPayload("../../evil_config.txt", "malicious=true")'>../../evil_config.txt</code>
+                    - write to project root
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Arbitrary File Write occurs when an application writes files to locations 
+            controlled by user input without proper validation. Attackers can overwrite 
+            critical files, plant malicious code, or escalate privileges.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application expects filename in backups folder:
+   POST /api/vulnerabilities/arbitrary-file-write/save
+   {"fileName": "backup.txt", "content": "data"}
+   ? C:\App\Backups\backup.txt
+
+2. Attacker uses path traversal in filename:
+   {"fileName": "../evil.txt", "content": "hacked!"}
+   ? C:\App\Backups\..\evil.txt
+   ? C:\App\evil.txt
+
+3. Path.Combine() allows traversal sequences
+
+4. File written outside intended directory
+
+Result: Attacker writes files anywhere on filesystem!</code></pre>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Code execution</strong> - overwrite .dll files, scripts</li>
+            <li><strong>Web shell upload</strong> - write .aspx/.cshtml to webroot</li>
+            <li><strong>Configuration tampering</strong> - modify appsettings.json</li>
+            <li><strong>Privilege escalation</strong> - overwrite authorized_keys, sudoers</li>
+            <li><strong>Data destruction</strong> - overwrite critical application files</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Arbitrary File Write:</h5>
+        <ol>
+            <li><strong>Remove directory info</strong> - use Path.GetFileName() to strip paths</li>
+            <li><strong>Validate resolved path</strong> - ensure it stays within base directory</li>
+            <li><strong>Reject dangerous characters</strong> - block .., /, \</li>
+            <li><strong>Use unique generated names</strong> - Guid.NewGuid() + extension</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = "arbitrary-file-write";
+    
+    private Vulnerability vulnerability = null!;
+    
+    private string filename = "";
+    private string content = "";
+    private string result = "";
+    private string actualPath = "";
+    private string resultCssClass = "";
+
+    private const string VulnerableCode = """
+// DANGEROUS: Direct path concatenation
+[HttpPost("save")]
+public IActionResult SaveBackup([FromBody] BackupRequest request)
+{
+    var baseDir = "C:\\Backups";
+    
+    // User input directly in path!
+    var filePath = Path.Combine(baseDir, request.FileName);
+    
+    System.IO.File.WriteAllText(filePath, request.Content);
+    
+    return Ok(new { message = "Saved" });
+}
+""";
+
+    private const string SafeCode = """
+[HttpPost("save")]
+public IActionResult SaveBackup([FromBody] BackupRequest request)
+{
+    var baseDir = Path.GetFullPath("Backups");
+    
+    // Remove any directory information from filename
+    var safeFileName = Path.GetFileName(request.FileName);
+    
+    // Reject dangerous characters
+    if (safeFileName.Contains("..") || 
+        safeFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    {
+        return BadRequest("Invalid filename");
+    }
+    
+    // Build full path
+    var fullPath = Path.GetFullPath(
+        Path.Combine(baseDir, safeFileName)
+    );
+    
+    // Verify file stays within base directory
+    if (!fullPath.StartsWith(
+            baseDir + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase))
+    {
+        return BadRequest("Access denied");
+    }
+    
+    // Write file safely
+    System.IO.File.WriteAllText(fullPath, request.Content);
+    
+    return Ok(new { message = "Saved" });
+}
+
+// Better: Use generated filenames
+var safeFileName = $"{Guid.NewGuid()}.txt";
+""";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug(Slug) 
+            ?? throw new InvalidOperationException($"Vulnerability not found: {Slug}");
+    }
+
+    private async Task SaveFile()
+    {
+        result = "";
+        actualPath = "";
+        resultCssClass = "";
+
+        if (string.IsNullOrWhiteSpace(filename) || string.IsNullOrWhiteSpace(content))
+        {
+            result = "Please enter filename and content";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        try
+        {
+            var request = new { fileName = filename, content = content };
+            var response = await HttpClient.PostAsJsonAsync(
+                "/api/vulnerabilities/arbitrary-file-write/save", 
+                request
+            );
+
+            var responseData = await response.Content.ReadFromJsonAsync<SaveResponse>();
+
+            if (responseData?.Success == true)
+            {
+                actualPath = responseData.ActualPath;
+
+                if (responseData.IsVulnerable)
+                {
+                    resultCssClass = "alert alert-danger";
+                    result = "ARBITRARY FILE WRITE SUCCESSFUL!\n\n" +
+                            "File written outside intended directory!\n" +
+                            "Attackers can overwrite configuration, code, or system files.";
+                }
+                else
+                {
+                    resultCssClass = "alert alert-success";
+                    result = "File saved within backups directory (as intended)";
+                }
+            }
+            else
+            {
+                resultCssClass = "alert alert-warning";
+                result = responseData?.Message ?? "Unknown error";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultCssClass = "alert alert-warning";
+            result = $"Request failed: {ex.Message}";
+        }
+    }
+
+    private void SetPayload(string file, string text)
+    {
+        filename = file;
+        content = text;
+        result = "";
+        actualPath = "";
+        resultCssClass = "";
+    }
+
+    private class SaveResponse
+    {
+        public bool Success { get; set; }
+        public string FileName { get; set; } = "";
+        public string ActualPath { get; set; } = "";
+        public bool IsVulnerable { get; set; }
+        public string Message { get; set; } = "";
+    }
+}

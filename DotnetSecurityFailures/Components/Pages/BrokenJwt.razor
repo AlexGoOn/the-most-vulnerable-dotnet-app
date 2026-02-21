@@ -1,0 +1,249 @@
+@page "/vulnerabilities/broken-jwt"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Broken JWT - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="broken-jwt" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Test JWT Validation:</h6>
+        <p class="small text-muted">Paste a JWT token or use predefined attacks to exploit vulnerabilities</p>
+
+        <div class="mb-3">
+            <label class="form-label">JWT Token:</label>
+            <textarea class="form-control" rows="4" @bind="jwtToken" 
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" @onclick="ValidateToken">
+            Validate JWT
+        </button>
+
+        @if (!string.IsNullOrEmpty(responseData)) {
+            <div class="@responseCssClass mt-3">
+                <strong>Response:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@responseData</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these attacks:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => ExecuteAttack(attack.GetInput2AsString())">@attack.GetInput2AsString()</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            JWT (JSON Web Token) vulnerabilities occur when applications fail to properly validate
+            token signatures. Common mistakes include accepting <code>alg: none</code>, not verifying
+            signatures, using weak secrets, or accepting tokens with modified claims.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker gets a valid JWT token:
+   eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
+   eyJzdWIiOiIxMjM0IiwibmFtZSI6IkpvaG4iLCJyb2xlIjoidXNlciJ9.
+   SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+
+2. Decodes payload and changes role:
+   {"sub":"1234","name":"John","role":"admin"}
+
+3. Re-encodes with "alg":"none" or removes signature
+
+4. Sends modified token to server
+
+5. Vulnerable server accepts token without validation
+
+Result: Regular user becomes admin!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Privilege escalation</strong> - change role from user to admin</li>
+            <li><strong>Identity spoofing</strong> - impersonate any user</li>
+            <li><strong>Unlimited access</strong> - bypass expiration times</li>
+            <li><strong>Data manipulation</strong> - modify any claim in the token</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against JWT Vulnerabilities:</h5>
+        <ol>
+            <li><strong>Use AddJwtBearer</strong> - don't parse JWT manually</li>
+            <li><strong>Validate all claims</strong> - check issuer, audience, expiration time</li>
+            <li><strong>Short expiration</strong> - set reasonable token lifetime (15-60 minutes)</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Use AddJwtBearer with proper validation
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var key = Encoding.UTF8.GetBytes(
+            builder.Configuration[\"Jwt:SecretKey\"]!);
+        
+        options.TokenValidationParameters = new()
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true
+        };
+    });
+
+[Authorize]
+[HttpGet(\"protected\]
+public IActionResult GetData() => Ok();
+""";
+    private const string VulnerableCode = """
+// Manual JWT parsing without signature validation
+[HttpPost(\"validate\]
+public IActionResult ValidateToken([FromBody] string token)
+{
+    var parts = token.Split('.');
+    if (parts.Length < 2) return BadRequest();
+    
+    // Decode payload without signature validation!
+    var payload = Encoding.UTF8.GetString(
+        Convert.FromBase64String(parts[1]));
+    
+    var claims = JsonSerializer.Deserialize<Dictionary<string, string>>(payload);
+    
+    // NO SIGNATURE VERIFICATION!
+    return Ok(new { valid = true, claims });
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string jwtToken = "";
+    private string responseData = "";
+    private string responseCssClass = "";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("broken-jwt")
+            ?? throw new InvalidOperationException($"Vulnerability not found: broken-jwt");
+    }
+
+    private async Task ValidateToken()
+    {
+        responseData = "";
+
+        if (string.IsNullOrWhiteSpace(jwtToken))
+        {
+            responseCssClass = "alert alert-warning";
+            responseData = "Please enter a JWT token";
+            return;
+        }
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        var response = await httpClient.PostAsJsonAsync("/api/jwt/validate", new { Token = jwtToken });
+        var content = await response.Content.ReadAsStringAsync();
+
+        var jsonDoc = System.Text.Json.JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        if (root.TryGetProperty("exploited", out var exploited) && exploited.GetBoolean())
+        {
+            responseCssClass = "alert alert-danger";
+            responseData = root.GetProperty("message").GetString() ?? "";
+            
+            if (root.TryGetProperty("payload", out var payload))
+            {
+                responseData += $"\n\nDecoded Payload:\n{payload.GetString()}";
+            }
+        }
+        else if (root.TryGetProperty("valid", out var valid) && valid.GetBoolean())
+        {
+            responseCssClass = "alert alert-warning";
+            responseData = root.GetProperty("message").GetString() ?? "";
+            
+            if (root.TryGetProperty("payload", out var payload))
+            {
+                responseData += $"\n\nDecoded Payload:\n{payload.GetString()}";
+            }
+        }
+        else
+        {
+            responseCssClass = "alert alert-danger";
+            responseData = root.TryGetProperty("error", out var error) 
+                ? error.GetString() ?? "Validation failed" 
+                : "Validation failed";
+        }
+    }
+
+    private async Task ExecuteAttack(string attackName)
+    {
+        responseData = "";
+        
+        switch (attackName)
+        {
+            case "Algorithm Confusion":
+                await AttackAlgorithmNone();
+                break;
+            case "Privilege Escalation":
+                await AttackPrivilegeEscalation();
+                break;
+            case "Signature Removal":
+                await AttackRemoveSignature();
+                break;
+        }
+    }
+
+    private async Task AttackAlgorithmNone()
+    {
+        var header = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"alg\":\"none\",\"typ\":\"JWT\"}")).TrimEnd('=');
+        
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"sub\":\"1234567890\",\"name\":\"John Doe\",\"role\":\"admin\",\"iat\":1516239022}")).TrimEnd('=');
+        
+        jwtToken = $"{header}.{payload}.";
+        await ValidateToken();
+    }
+
+    private async Task AttackPrivilegeEscalation()
+    {
+        var header = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"alg\":\"HS256\",\"typ\":\"JWT\"}")).TrimEnd('=');
+        
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"sub\":\"1234567890\",\"name\":\"John Doe\",\"role\":\"admin\",\"iat\":1516239022}")).TrimEnd('=');
+        
+        var signature = "modified_signature_that_is_not_validated";
+        
+        jwtToken = $"{header}.{payload}.{signature}";
+        await ValidateToken();
+    }
+
+    private async Task AttackRemoveSignature()
+    {
+        var header = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"alg\":\"HS256\",\"typ\":\"JWT\"}")).TrimEnd('=');
+        
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+            "{\"sub\":\"1234567890\",\"name\":\"John Doe\",\"role\":\"admin\",\"iat\":1516239022}")).TrimEnd('=');
+        
+        jwtToken = $"{header}.{payload}";
+        await ValidateToken();
+    }
+}

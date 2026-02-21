@@ -1,0 +1,205 @@
+@page "/vulnerabilities/certificate-validation"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Certificate Validation Disabled - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="certificate-validation" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="mb-3">
+            <label class="form-label">API Endpoint URL:</label>
+            <input type="text" class="form-control" @bind="apiUrl" 
+                   placeholder="https://api.example.com/data" />
+        </div>
+        
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" @bind="disableValidation" id="disableCheck">
+            <label class="form-check-label" for="disableCheck">
+                <strong class="text-danger">Disable Certificate Validation</strong>
+                <small class="d-block text-muted">(To bypass self-signed cert errors)</small>
+            </label>
+        </div>
+
+        <button class="btn btn-primary w-100" @onclick="TestConnection">
+            Test Connection
+        </button>
+        
+        @if (connectionResult != null)
+        {
+            <div class="@resultCssClass mt-3">
+                @((MarkupString)connectionResult)
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Disabling SSL/TLS certificate validation to bypass errors from self-signed or expired certificates 
+            completely defeats the purpose of HTTPS encryption.
+        </p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application disables certificate validation
+2. Attacker performs Man-in-the-Middle attack
+3. Attacker presents fake certificate
+4. Application accepts it without validation
+5. Attacker intercepts all "secure" traffic
+6. Credentials, tokens, data all compromised
+
+Result: Complete loss of encryption security!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Man-in-the-Middle:</strong> Attacker intercepts all traffic</li>
+            <li><strong>Credential Theft:</strong> Passwords, tokens stolen</li>
+            <li><strong>Data Manipulation:</strong> Responses modified by attacker</li>
+            <li><strong>Impersonation:</strong> Attacker impersonates server</li>
+            <li><strong>No Encryption:</strong> Connection may not be encrypted at all</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Certificate Validation Bypass:</h5>
+        <ol>
+            <li><strong>Never Disable Globally:</strong> Never use ServicePointManager callback</li>
+            <li><strong>Use Default Validation:</strong> Trust .NET certificate validation</li>
+            <li><strong>Certificate Pinning:</strong> Pin specific certificate thumbprints</li>
+            <li><strong>Development vs Production:</strong> Never leave dev workarounds in production</li>
+            <li><strong>Monitor Expiry:</strong> Implement alerts for expiring certificates</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Proper certificate validation
+
+// 1. Default behavior (most secure):
+var client = new HttpClient();
+var response = await client.GetAsync(apiUrl);
+// Uses system certificate store automatically
+
+// 2. For development with self-signed certs:
+var handler = new HttpClientHandler();
+handler.ServerCertificateCustomValidationCallback = 
+    (message, cert, chain, sslErrors) =>
+{
+    if (sslErrors == SslPolicyErrors.None)
+        return true;
+    
+    if (IsDevelopment && 
+        sslErrors == SslPolicyErrors.RemoteCertificateChainErrors)
+    {
+        // Verify specific certificate thumbprint
+        return cert.GetCertHashString() == ExpectedThumbprint;
+    }
+    
+    logger.LogWarning("Cert validation failed: {Errors}", sslErrors);
+    return false;
+};
+
+// 3. Certificate pinning:
+handler.ServerCertificateCustomValidationCallback = 
+    (message, cert, chain, errors) =>
+{
+    var trustedThumbprints = new[] 
+    { 
+        "ABC123...", // Production cert
+        "DEF456..."  // Backup cert
+    };
+    
+    return trustedThumbprints.Contains(cert.GetCertHashString());
+};
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Disabling certificate validation
+var handler = new HttpClientHandler();
+
+// Accepts ANY certificate - NEVER DO THIS!
+handler.ServerCertificateCustomValidationCallback = 
+    (message, cert, chain, errors) => true;
+
+var client = new HttpClient(handler);
+var response = await client.GetAsync(apiUrl);
+
+// Another dangerous pattern:
+ServicePointManager.ServerCertificateValidationCallback
+    += (sender, cert, chain, errors) => true;
+
+// "Quick fix" for self-signed certs:
+#if DEBUG
+    // Bad: Leaving this in production
+    handler.ServerCertificateCustomValidationCallback = 
+        (_, _, _, _) => true;
+#endif
+""";
+
+    private Vulnerability? vulnerability;
+    private string apiUrl = "https://api.example.com/data";
+    private bool disableValidation = false;
+    private string? connectionResult;
+    private string resultCssClass = "";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("certificate-validation")
+            ?? throw new InvalidOperationException($"Vulnerability not found: certificate-validation");
+    }
+
+    private void TestConnection()
+    {
+        connectionResult = null;
+
+        if (string.IsNullOrWhiteSpace(apiUrl))
+        {
+            connectionResult = "Please enter API URL";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        if (!apiUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            connectionResult = "<strong>⚠️ Warning:</strong> Not an HTTPS URL - no certificate validation needed";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        if (disableValidation)
+        {
+            // VULNERABLE
+            resultCssClass = "alert alert-danger";
+            connectionResult = 
+                $"<strong>VULNERABILITY EXPLOITED!</strong><br/><br/>" +
+                $"<strong>Certificate validation DISABLED for:</strong><br/>" +
+                $"<code>{apiUrl}</code><br/><br/>" +
+                $"<strong>Attack Scenario:</strong><br/>" +
+                $"1. Application accepts ANY certificate<br/>" +
+                $"2. Attacker performs MitM attack<br/>" +
+                $"3. Presents fake certificate<br/>" +
+                $"4. Application accepts it without validation<br/>" +
+                $"5. Attacker intercepts all traffic<br/>" +
+                $"6. Steals credentials and tokens<br/>" +
+                $"7. ✏Modifies API responses<br/><br/>" +
+                $"<strong>What's exposed:</strong><br/>" +
+                $"• API keys and authentication tokens<br/>" +
+                $"• User credentials and session data<br/>" +
+                $"• Sensitive business data<br/>" +
+                $"• Payment information<br/><br/>" +
+                $"<div class='text-danger'><strong>This completely defeats HTTPS security!</strong></div>";
+        }
+        else
+        {
+            // SAFE
+            resultCssClass = "alert alert-success";
+            connectionResult = 
+                $"<strong Connection Secure</strong><br/><br/>" +
+                $"Certificate validation ENABLED:<br/>" +
+                $"• Certificate signed by trusted CA<br/>" +
+                $"• Hostname matches certificate<br/>" +
+                $"• Certificate not expired<br/>" +
+                $"• Certificate not revoked<br/>" +
+                $"• Full chain validation<br/><br/>" +
+                $"<strong>Connection to {apiUrl} is secure!</strong>";
+        }
+    }
+}

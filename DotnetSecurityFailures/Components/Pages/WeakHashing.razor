@@ -1,0 +1,308 @@
+@page "/vulnerabilities/weak-hashing"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using System.Security.Cryptography
+@using System.Text
+@using Konscious.Security.Cryptography
+@using System.Diagnostics
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Weak Hashing - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="weak-hashing" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Password Hashing Demo:</h6>
+
+        <div class="mb-3">
+            <label class="form-label">Enter password:</label>
+            <input type="text" class="form-control" @bind="password" 
+                   placeholder="MyPassword123" />
+        </div>
+
+        <button class="btn btn-danger" @onclick="HashWithMD5">Hash with MD5</button>
+        <button class="btn btn-warning" @onclick="HashWithSHA1">Hash with SHA1</button>
+        <button class="btn btn-success" @onclick="HashWithArgon2" disabled="@isArgon2Processing">
+            @if (isArgon2Processing)
+            {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <span>Calculating...</span>
+            }
+            else
+            {
+                <span>Hash with Argon2id</span>
+            }
+        </button>
+
+        @if (results.Any())
+        {
+            <div class="mt-3">
+                @foreach (var result in results)
+                {
+                    <div class="alert alert-@result.AlertType">
+                        <strong>@result.Algorithm:</strong><br/>
+                        <code style="word-break: break-all;">@result.Hash</code><br/>
+                        <div class="mt-2">
+                            <span class="badge bg-dark">Time for 50 iterations: @result.TimeMs.ToString("F2") ms</span>
+                            <span class="badge bg-secondary ms-2">Per hash: @((result.TimeMs / 50).ToString("F2")) ms</span>
+                        </div>
+                        <small class="text-muted">@result.Description</small>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Test cracking:</strong><br/>
+            MD5/SHA1 hashes can be cracked on sites:<br/>
+            <ul class="mb-0">
+                <li><a href="https://crackstation.net/" target="_blank">CrackStation.net</a></li>
+                <li><a href="https://hashcat.net/hashcat/" target="_blank">Hashcat</a> (offline)</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <h6>Why MD5/SHA1 are Dangerous:</h6>
+        
+        <h6 class="mt-3">1. Collisions (Collision Attacks)</h6>
+        <p>MD5 and SHA1 have known collisions - you can create two different inputs with the same hash.</p>
+        
+        <h6 class="mt-3">2. Speed = Vulnerability</h6>
+        <p>MD5: <strong>~1 billion hashes/sec</strong> on GPU<br/>
+           Modern GPUs can brute-force all 8-character passwords in hours!</p>
+        
+        <div class="alert alert-warning mt-2">
+            <strong>Performance comparison (this page's demo):</strong><br/>
+            Try hashing the same password with all three algorithms and compare times!<br/>
+             - MD5/SHA1: milliseconds for 50 iterations<br/>
+             - Argon2id: seconds for 50 iterations (1000x+ slower = secure!)
+        </div>
+
+        <h6 class="mt-3">3. Rainbow Tables</h6>
+        <p>Pre-computed tables with billions of hashes of popular passwords.</p>
+        
+        <h6 class="mt-3">4. No Salt</h6>
+        <p>Identical passwords = identical hashes ? mass compromise.</p>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Proper Password Hashing:</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Use:</h6>
+                <ul>
+                    <li><strong>Argon2id</strong> - winner of Password Hashing Competition 2015, best choice</li>
+                    <li><strong>BCrypt</strong> - gold standard, battle-tested</li>
+                    <li><strong>PBKDF2</strong> - built into .NET, NIST recommended (600k+ iterations)</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h6>DO NOT use:</h6>
+                <ul>
+                    <li><strong>MD5</strong> - broken since 1996</li>
+                    <li><strong>SHA1</strong> - deprecated since 2011</li>
+                    <li><strong>SHA256/512</strong> - too fast for passwords</li>
+                    <li><strong>Custom algorithms</strong> - never!</li>
+                </ul>
+            </div>
+        </div>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Argon2id (recommended - modern standard)
+using Konscious.Security.Cryptography;
+
+string HashPasswordArgon2(string password)
+{
+    byte[] salt = RandomNumberGenerator.GetBytes(16);
+    
+    using var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
+    {
+        Salt = salt,
+        DegreeOfParallelism = 8,
+        MemorySize = 65536,  // 64 MB
+        Iterations = 4
+    };
+    
+    byte[] hash = argon2.GetBytes(32);
+    
+    // Combine salt + hash for storage
+    byte[] hashWithSalt = new byte[salt.Length + hash.Length];
+    Buffer.BlockCopy(salt, 0, hashWithSalt, 0, salt.Length);
+    Buffer.BlockCopy(hash, 0, hashWithSalt, salt.Length, hash.Length);
+    
+    return Convert.ToBase64String(hashWithSalt);
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: MD5
+using var md5 = MD5.Create();
+byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(password));
+string hashString = Convert.ToHexString(hash);
+// Easy to crack!
+
+// DANGEROUS: SHA1
+using var sha1 = SHA1.Create();
+byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(password));
+
+// Even SHA256 WITHOUT SALT is bad for passwords
+using var sha256 = SHA256.Create();
+byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+// Fast ? easy to brute-force
+
+// Plain SHA256 without iterations
+string StoreBadPassword(string password)
+{
+    using var sha = SHA256.Create();
+    var bytes = Encoding.UTF8.GetBytes(password);
+    var hash = sha.ComputeHash(bytes);
+    return Convert.ToBase64String(hash);
+}
+
+// Even with salt but without iterations
+string StoreStillBad(string password, byte[] salt)
+{
+    using var sha = SHA256.Create();
+    var bytes = Encoding.UTF8.GetBytes(password).Concat(salt).ToArray();
+    var hash = sha.ComputeHash(bytes);
+    return Convert.ToBase64String(hash);
+}
+""";
+
+    private string password = "";
+    private List<HashResult> results = new();
+    private bool isArgon2Processing = false;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("weak-hashing")
+            ?? throw new InvalidOperationException($"Vulnerability not found: weak-hashing");
+    }
+
+    private class HashResult
+    {
+        public string Algorithm { get; set; } = "";
+        public string Hash { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string AlertType { get; set; } = "";
+        public double TimeMs { get; set; }
+    }
+
+    private void HashWithMD5()
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        results.Clear();
+        
+        var stopwatch = Stopwatch.StartNew();
+        string hashString = "";
+        
+        // Compute 50 times to measure performance
+        for (int i = 0; i < 50; i++)
+        {
+            using var md5 = MD5.Create();
+            byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(password));
+            hashString = Convert.ToHexString(hash);
+        }
+        
+        stopwatch.Stop();
+
+        results.Add(new HashResult
+        {
+            Algorithm = "MD5 (VULNERABLE)",
+            Hash = hashString,
+            Description = "?? INSECURE! MD5 is broken and can be cracked instantly using rainbow tables or GPU brute-force.",
+            AlertType = "danger",
+            TimeMs = stopwatch.Elapsed.TotalMilliseconds
+        });
+    }
+
+    private void HashWithSHA1()
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        results.Clear();
+        
+        var stopwatch = Stopwatch.StartNew();
+        string hashString = "";
+        
+        // Compute 50 times to measure performance
+        for (int i = 0; i < 50; i++)
+        {
+            using var sha1 = SHA1.Create();
+            byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(password));
+            hashString = Convert.ToHexString(hash);
+        }
+        
+        stopwatch.Stop();
+
+        results.Add(new HashResult
+        {
+            Algorithm = "SHA1 (VULNERABLE)",
+            Hash = hashString,
+            Description = "?? INSECURE! SHA1 is deprecated and vulnerable to collision attacks. Not suitable for passwords.",
+            AlertType = "warning",
+            TimeMs = stopwatch.Elapsed.TotalMilliseconds
+        });
+    }
+
+    private async Task HashWithArgon2()
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        results.Clear();
+        isArgon2Processing = true;
+        StateHasChanged();
+        
+        await Task.Run(() =>
+        {
+            var stopwatch = Stopwatch.StartNew();
+            string argon2Hash = "";
+            
+            // Compute 50 times to measure performance
+            for (int i = 0; i < 50; i++)
+            {
+                byte[] salt = RandomNumberGenerator.GetBytes(16);
+                
+                using var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
+                {
+                    Salt = salt,
+                    DegreeOfParallelism = 8,
+                    MemorySize = 65536,  // 64 MB
+                    Iterations = 4
+                };
+                
+                byte[] hash = argon2.GetBytes(32);
+                
+                // Combine salt + hash for storage
+                byte[] hashWithSalt = new byte[salt.Length + hash.Length];
+                Buffer.BlockCopy(salt, 0, hashWithSalt, 0, salt.Length);
+                Buffer.BlockCopy(hash, 0, hashWithSalt, salt.Length, hash.Length);
+                
+                argon2Hash = Convert.ToBase64String(hashWithSalt);
+            }
+            
+            stopwatch.Stop();
+
+            results.Add(new HashResult
+            {
+                Algorithm = "Argon2id (SECURE)",
+                Hash = argon2Hash,
+                Description = "? SECURE! Argon2id is memory-hard, resistant to GPU/ASIC attacks. Winner of Password Hashing Competition 2015. Recommended by OWASP.",
+                AlertType = "success",
+                TimeMs = stopwatch.Elapsed.TotalMilliseconds
+            });
+        });
+        
+        isArgon2Processing = false;
+    }
+}

@@ -1,0 +1,256 @@
+@page "/vulnerabilities/template-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using RazorLight
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Template Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="template-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Email Template System with SSTI:</h6>
+        
+        <div class="mb-3">
+            <label class="form-label">Template (Subject):</label>
+            <input type="text" class="form-control" @bind="templateInput" 
+                   placeholder='Hello @@Model.Name!' />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">User Name:</label>
+            <input type="text" class="form-control" @bind="userName" 
+                   placeholder="John Doe" />
+        </div>
+        <button class="btn btn-primary" @onclick="RenderTemplate" disabled="@isExecuting">
+            @(isExecuting ? "Executing..." : "Render Template")
+        </button>
+
+        @if (!string.IsNullOrEmpty(executedTemplate))
+        {
+            <div class="alert alert-info mt-3">
+                <strong>Executed Template:</strong>
+                <pre class="mb-0 mt-2 small"><code>@executedTemplate</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(renderedOutput))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Rendered Output:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap; font-family: 'Courier New', monospace; word-wrap: break-word;">@renderedOutput</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetTemplate(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>Server-Side Template Injection (SSTI) occurs when user input is embedded into template engines (like Razor, Handlebars, Liquid, etc.) and the template is executed on the server.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Template: Hello @("@")System.Environment.MachineName
+
+Engine processes:
+1. Parses Razor template syntax @("@")...
+2. Evaluates expression: System.Environment.MachineName
+3. Executes .NET code to get machine name
+4. Returns: "Hello SERVER-NAME-2024"
+
+Result: Code execution on server!</code></pre>
+
+        <h6 class="mt-3">Attack Flow:</h6>
+        <ol>
+            <li>Attacker identifies template engine in use</li>
+            <li>Injects template syntax into user input</li>
+            <li>Template engine evaluates injected code</li>
+            <li>Attacker gains code execution on server</li>
+        </ol>
+        
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Remote Code Execution (RCE)</strong> - Full server compromise</li>
+            <li><strong>File system access</strong> - Read sensitive files</li>
+            <li><strong>Information disclosure</strong> - Access environment variables, configs</li>
+            <li><strong>Data exfiltration</strong> - Steal database credentials</li>
+            <li><strong>Lateral movement</strong> - Compromise other systems</li>
+            <li><strong>Complete application takeover</strong></li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Template Injection:</h5>
+        <ol>
+            <li><strong>Never Use User Input as Templates</strong> - Only use predefined, server-side templates</li>
+            <li><strong>Separate Data from Code</strong> - Pass user input as data/model, not template code</li>
+            <li><strong>Use Logic-less Templates</strong> - Choose template engines without code execution (Mustache, Handlebars)</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Predefined templates only
+public async Task<string> RenderEmail(
+    string templateName, 
+    Dictionary<string, string> data)
+{
+    var templatePath = Path.Combine(
+        "Templates", 
+        Path.GetFileName(templateName) + ".cshtml;
+    
+    string template = await File.ReadAllTextAsync(templatePath);
+    
+    var engine = new RazorLightEngineBuilder()
+        .UseMemoryCachingProvider()
+        .Build();
+    
+    // Data is passed as model, not part of template
+    var model = new TemplateModel
+    {
+        Name = data["name"]),
+        Balance = data["balance
+    };
+    
+    return await engine.CompileRenderStringAsync(
+        templateName, 
+        template, 
+        model
+    );
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: User input as template string
+using RazorLight;
+
+public async Task<string> RenderEmail(string template, object data)
+{
+    var engine = new RazorLightEngineBuilder()
+        .UseMemoryCachingProvider()
+        .Build();
+    
+    // VULNERABLE: User-controlled template string
+    string result = await engine
+        .CompileRenderStringAsync("emailTemplate", template, data);
+    
+    return result;
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string templateInput = "Hello @Model.Name!";
+    private string userName = "John Doe";
+    private string? executedTemplate;
+    private string? renderedOutput;
+    private string? attackAnalysis;
+    private bool isExecuting = false;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("template-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: template-injection");
+    }
+
+    // Model class for RazorLight
+    public class TemplateModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Balance { get; set; } = string.Empty;
+    }
+
+    private async Task RenderTemplate()
+    {
+        ClearResults();
+        isExecuting = true;
+
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(100);
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(templateInput))
+            {
+                renderedOutput = "Please enter a template";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                renderedOutput = "Please enter a user name";
+                return;
+            }
+
+            executedTemplate = templateInput;
+
+            // VULNERABLE - Real RazorLight execution!
+            var engine = new RazorLightEngineBuilder()
+                .UseMemoryCachingProvider()
+                .Build();
+
+            var model = new TemplateModel 
+            { 
+                Name = userName, 
+                Balance = "$1,234.56" 
+            };
+            
+            // DANGER: User input as template!
+            var result = await engine.CompileRenderStringAsync(
+                "templateKey_" + Guid.NewGuid().ToString(), 
+                templateInput, 
+                model
+            );
+
+            renderedOutput = result;
+
+            var predefinedAttack = vulnerability.PredefinedAttacks
+                .FirstOrDefault(a => a.Input == templateInput);
+            attackAnalysis = predefinedAttack?.Description ?? "Template rendered successfully.";
+        }
+        catch (Exception ex)
+        {
+            renderedOutput = $"Error: {ex.GetType().Name}\nMessage: {ex.Message}";
+            attackAnalysis = $"TEMPLATE SYNTAX ERROR!\n\n" +
+                           $"Error: {ex.GetType().Name}\n" +
+                           $"Message: {ex.Message}\n\n" +
+                           $"This could indicate:\n" +
+                           $"- Invalid Razor syntax in injected template\n" +
+                           $"- Security restrictions blocking execution\n" +
+                           $"- Access denied to certain .NET types\n\n" +
+                           $"Even errors can leak information about the template engine!";
+        }
+        finally
+        {
+            isExecuting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void SetTemplate(string template)
+    {
+        templateInput = template;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        executedTemplate = null;
+        renderedOutput = null;
+        attackAnalysis = null;
+    }
+}

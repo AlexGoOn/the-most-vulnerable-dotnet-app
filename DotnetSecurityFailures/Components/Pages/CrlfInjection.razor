@@ -1,0 +1,205 @@
+@page "/vulnerabilities/crlf-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject HttpClient HttpClient
+@inject NavigationManager NavigationManager
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>CRLF Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="crlf-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>HTTP Redirect with CRLF Injection (Real API):</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="redirectUrl" 
+                   placeholder="e.g., /dashboard" />
+            <button class="btn btn-primary" @onclick="TestRedirect">Test Redirect</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(apiEndpoint))
+        {
+            <div class="alert alert-info">
+                <strong>API Endpoint:</strong>
+                <pre class="mb-0 mt-2 small"><code>@apiEndpoint</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(httpResponse))
+        {
+            <div class="alert alert-warning">
+                <strong>HTTP Response:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap; font-family: 'Courier New', monospace; word-wrap: break-word;">@httpResponse</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetUrl(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>CRLF stands for <strong>Carriage Return (\r, %0d)</strong> and <strong>Line Feed (\n, %0a)</strong>. These characters mark line endings in HTTP headers.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: /page%0d%0a<strong>Set-Cookie: admin=true</strong>
+
+HTTP Response becomes:
+HTTP/1.1 302 Found
+Location: /page
+<strong>Set-Cookie: admin=true</strong>
+Content-Type: text/html
+
+Result: Injected Set-Cookie header!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Header injection</strong> - add malicious Set-Cookie, Location, Content-Type headers</li>
+            <li><strong>HTTP response splitting</strong> - inject entire HTTP responses with malicious content</li>
+            <li><strong>Session fixation</strong> - set session cookies to hijack accounts</li>
+            <li><strong>XSS attacks</strong> - inject JavaScript into response body</li>
+            <li><strong>Cache poisoning</strong> - poison CDN/proxy caches with malicious content</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against CRLF Injection:</h5>
+        <ol>
+            <li><strong>Remove CRLF characters</strong> - strip <code>\r</code>, <code>\n</code>, <code>%0d</code>, <code>%0a</code> from all input</li>
+            <li><strong>Use framework features</strong> - built-in methods like <code>Redirect()</code> automatically sanitize</li>
+            <li><strong>HTTP header validation</strong> - validate all header values before setting</li>
+        </ol>
+
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+[HttpGet("safe]
+public IActionResult SafeRedirect([FromQuery] string url)
+{
+    // Validate URL is relative and doesn't contain suspicious characters
+    if (string.IsNullOrEmpty(url) || url.Contains('\r') || url.Contains('\n'))
+    {
+        return BadRequest("Invalid URL;
+    }
+    
+    // Validate it's a local URL (prevent open redirect)
+    if (!Url.IsLocalUrl(url))
+    {
+        return BadRequest("Only local URLs are allowed;
+    }
+    
+    // Use built-in Redirect - automatically sanitizes CRLF
+    return Redirect(url);
+}
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Building HTTP response with user input
+[HttpGet("vulnerable]
+public async Task VulnerableRedirect([FromQuery] string url)
+{
+    // DANGER: URL decode to convert %0d%0a to actual CRLF
+    var decodedUrl = System.Web.HttpUtility.UrlDecode(url);
+    
+    // DANGER: Building raw HTTP response with decoded input
+    var rawResponse = "HTTP/1.1 302 Found\r\n" +
+                      $"Location: {decodedUrl}\r\n" +  // VULNERABLE!
+                      "X-Powered-By: VulnerableApp\r\n" +
+                      "Content-Type: text/html; charset=utf-8\r\n" +
+                      "Server: Kestrel\r\n" +
+                      "\r\n" +
+                      "<html><body>Redirecting...</body></html>";
+    
+    await Response.WriteAsync(rawResponse);
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string redirectUrl = "";
+    private string? apiEndpoint;
+    private string? httpResponse;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("crlf-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: crlf-injection");
+    }
+
+    private async Task TestRedirect()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(redirectUrl))
+        {
+            httpResponse = "Please enter a URL";
+            return;
+        }
+
+        try
+        {
+            var baseUrl = NavigationManager.BaseUri.TrimEnd('/');
+            apiEndpoint = $"GET {baseUrl}/api/redirect/vulnerable?url={Uri.EscapeDataString(redirectUrl)}";
+            
+            // Call real API defined in VulnerableRedirectController
+            var response = await HttpClient.GetAsync($"{baseUrl}/api/redirect/vulnerable?url={Uri.EscapeDataString(redirectUrl)}");
+            var apiResponseText = await response.Content.ReadAsStringAsync();
+            
+            // Extract the raw HTTP response from API response
+            // API returns: "=== RAW HTTP RESPONSE (Vulnerable) ===\n\n{rawResponse}\n\n=== END OF RESPONSE ==="
+            var startMarker = "=== RAW HTTP RESPONSE (Vulnerable) ===\n\n";
+            var endMarker = "\n\n=== END OF RESPONSE ===";
+            
+            var startIndex = apiResponseText.IndexOf(startMarker);
+            var endIndex = apiResponseText.IndexOf(endMarker);
+            
+            var predefinedAttack = vulnerability.PredefinedAttacks
+                    .FirstOrDefault(a => a.Input == redirectUrl);
+            attackAnalysis = predefinedAttack == null ? "Custom atack" : predefinedAttack.Description;
+            if (startIndex >= 0 && endIndex > startIndex)
+            {
+                startIndex += startMarker.Length;
+                httpResponse = apiResponseText.Substring(startIndex, endIndex - startIndex);
+            }
+            else
+            {
+                httpResponse = apiResponseText;
+            }
+        }
+        catch (Exception ex)
+        {
+            httpResponse = $"Error: {ex.Message}";
+        }
+    }
+
+    private void SetUrl(string url)
+    {
+        redirectUrl = url;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        apiEndpoint = null;
+        httpResponse = null;
+        attackAnalysis = null;
+    }
+}

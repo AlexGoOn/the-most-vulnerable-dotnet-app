@@ -1,0 +1,288 @@
+@page "/vulnerabilities/mass-assignment"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject HttpClient HttpClient
+
+<PageTitle>Mass Assignment - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="mass-assignment" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="alert alert-info">
+            <strong>Current User:</strong><br/>
+            Name: @currentUser.Name<br/>
+            Email: @currentUser.Email<br/>
+            Balance: $@currentUser.Balance
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Name:</label>
+            <input type="text" class="form-control" @bind="updateName" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Email:</label>
+            <input type="email" class="form-control" @bind="updateEmail" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="UpdateProfile">
+            Update Profile
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(requestData))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Request Sent:</strong>
+                <pre class="mb-0 mt-2 small">@requestData</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(responseData))
+        {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>Response:</strong>
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.85em;">@responseData</pre>
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try this attack:</strong>
+            <ul class="mb-0 small">
+                <li class="mt-2">
+                    <code style="cursor: pointer; color: red;" @onclick="ExploitBalance">Modify balance to $999,999</code>
+                    - mass assignment attack
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Mass Assignment (Over-Posting) occurs when model binding automatically maps 
+            request data to object properties without explicit control.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Form shows only: name, email fields
+2. Attacker adds hidden fields:
+   POST /api/profile/update
+   {
+     "name":"John", 
+     "email":"john@example.com", 
+     "balance":999999,
+     "passwordHash":"hacked"
+   }
+3. Model binding accepts ALL properties
+4. Unauthorized properties get modified
+
+Result: Complete property manipulation!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Financial fraud:</strong> Modify account balances, prices</li>
+            <li><strong>Account takeover:</strong> Change password, email</li>
+            <li><strong>Privilege escalation:</strong> Modify role or permissions</li>
+            <li><strong>Data manipulation:</strong> Alter any unprotected property</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Mass Assignment:</h5>
+        <ol>
+            <li><strong>Use DTOs:</strong> Create separate classes for input with only allowed properties</li>
+            <li><strong>[Bind] attribute:</strong> Whitelist properties: [Bind("Name,Email")]</li>
+            <li><strong>Manual mapping:</strong> Explicitly copy only allowed fields</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Use dedicated DTO
+public class UpdateProfileRequest
+{
+    [Required]
+    [StringLength(100)]
+    public string Name { get; set; }
+
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; }
+
+    // Balance and PasswordHash NOT included!
+}
+
+[Authorize]
+[HttpPost("update])
+public IActionResult UpdateProfile(
+    [FromBody] UpdateProfileRequest request)
+{
+    // Only allowed properties can be modified
+    currentUser.Name = request.Name;
+    currentUser.Email = request.Email;
+
+    // Balance and PasswordHash cannot be changed here
+
+    return Ok(new { success = true });
+}
+
+// Alternative: Use [Bind] attribute
+[Authorize]
+[HttpPost("update])
+public IActionResult UpdateProfile(
+    [Bind("Name,Email")] UserProfile model)
+{
+    currentUser.Name = model.Name;
+    currentUser.Email = model.Email;
+    return Ok();
+}
+""";
+    private const string VulnerableCode = """
+public class UserProfile
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Email { get; set; }
+    public decimal Balance { get; set; }      
+    public string PasswordHash { get; set; }  
+    public bool IsAdmin { get; set; }         
+}
+
+[Authorize] 
+[HttpPost("update")]
+public IActionResult UpdateProfile(UserProfile user)
+{
+    _context.Users.Update(user);
+    _context.SaveChanges();
+
+    return Ok(new { success = true });
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string updateName = "John Doe";
+    private string updateEmail = "john@example.com";
+    private string result = "";
+    private string requestData = "";
+    private string responseData = "";
+    private string resultCssClass = "";
+
+    private UserProfile currentUser = new()
+    {
+        Name = "John Doe",
+        Email = "john@example.com",
+        Balance = 100.00m
+    };
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("mass-assignment")
+            ?? throw new InvalidOperationException($"Vulnerability not found: mass-assignment");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUser();
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        try
+        {
+            var response = await HttpClient.GetFromJsonAsync<ProfileResponse>("/api/vulnerabilities/mass-assignment/profile");
+            if (response != null)
+            {
+                currentUser.Name = response.Name;
+                currentUser.Email = response.Email;
+                currentUser.Balance = response.Balance;
+                updateName = response.Name;
+                updateEmail = response.Email;
+            }
+        }
+        catch { }
+    }
+
+    private async Task UpdateProfile()
+    {
+        var payload = new { name = updateName, email = updateEmail };
+        await SendRequest(payload, false);
+    }
+
+    private async Task ExploitBalance()
+    {
+        var payload = new { name = updateName, email = updateEmail, balance = 999999 };
+        await SendRequest(payload, true);
+    }
+
+    private async Task ExploitPassword()
+    {
+        var payload = new { name = updateName, email = updateEmail, passwordHash = "attacker_controlled_hash" };
+        await SendRequest(payload, true);
+    }
+
+    private async Task SendRequest(object payload, bool isExploit)
+    {
+        result = "";
+        requestData = "";
+        responseData = "";
+        resultCssClass = "";
+
+        try
+        {
+            requestData = $"POST /api/vulnerabilities/mass-assignment/update\n{System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}";
+
+            var response = await HttpClient.PostAsJsonAsync("/api/vulnerabilities/mass-assignment/update", payload);
+            var responseText = await response.Content.ReadAsStringAsync();
+            responseData = responseText;
+
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadCurrentUser();
+
+                if (isExploit)
+                {
+                    resultCssClass = "alert alert-danger";
+                    result = "MASS ASSIGNMENT ATTACK SUCCESSFUL!\n\n" +
+                            "The application accepted properties that were not in the form.\n" +
+                            "Sensitive fields were modified!\n\n" +
+                            "Check the updated user profile above.";
+                }
+                else
+                {
+                    resultCssClass = "alert alert-success";
+                    result = "Profile updated successfully.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            resultCssClass = "alert alert-warning";
+            result = $"Request failed: {ex.Message}";
+        }
+    }
+
+    private class UserProfile
+    {
+        public string Name { get; set; } = "";
+        public string Email { get; set; } = "";
+        public decimal Balance { get; set; }
+    }
+
+    private class ProfileResponse
+    {
+        public string Name { get; set; } = "";
+        public string Email { get; set; } = "";
+        public decimal Balance { get; set; }
+    }
+}

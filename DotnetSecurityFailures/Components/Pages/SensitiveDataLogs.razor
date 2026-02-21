@@ -1,0 +1,149 @@
+@page "/vulnerabilities/sensitive-data-logs"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Sensitive Data in Logs - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="sensitive-data-logs" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>User Login Simulation:</h6>
+        <p class="small text-muted">See what gets logged</p>
+
+        <div class="mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" @bind="username" placeholder="john.doe" />
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" @bind="password" placeholder="••••••••" />
+        </div>
+
+        <button class="btn btn-primary w-100" @onclick="Login">
+            Log in
+        </button>
+        
+        @if (!string.IsNullOrEmpty(logContent)) {
+            <div class="card border-warning mt-3">
+                <div class="card-header bg-warning">
+                    <strong>Application Log File</strong>
+                </div>
+                <div class="card-body p-0">
+                    <pre class="bg-dark text-light p-3 mb-0 small" style="max-height: 300px; overflow-y: auto;"><code>@logContent</code></pre>
+                </div>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            The application logs complete user input including passwords, credit cards, API tokens, 
+            and other sensitive data. These logs are often stored indefinitely and accessible to 
+            developers, support staff, and potentially attackers.
+        </p>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Credential Exposure:</strong> Passwords logged in plain text</li>
+            <li><strong>Payment Data Leaks:</strong> Credit card numbers in log files</li>
+            <li><strong>Token Theft:</strong> API keys and JWT tokens accessible</li>
+            <li><strong>PII Violations:</strong> GDPR, CCPA, HIPAA compliance issues</li>
+            <li><strong>Long-Term Storage:</strong> Logs often kept for months/years</li>
+            <li><strong>Wide Access:</strong> Many employees can read logs</li>
+        </ul>
+
+        <h6 class="mt-3">Common Log Targets:</h6>
+        <ul>
+            <li>Application log files</li>
+            <li>Centralized logging (Splunk, ELK)</li>
+            <li>Cloud logging (CloudWatch, App Insights)</li>
+            <li>Error tracking (Sentry, Raygun)</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Sensitive Data in Logs:</h5>
+        <ol>
+            <li><strong>Identify Sensitive Data</strong> - Passwords, tokens, API keys, SSN, credit cards, PII</li>
+            <li><strong>Never Log Passwords</strong> - Not even hashed ones in production logs</li>
+            <li><strong>Mask PCI Data</strong> - Only log last 4 digits of credit cards, never CVV</li>
+            <li><strong>Sanitize Exceptions</strong> - Don't log entire exception objects with user data</li>
+            <li><strong>Use Structured Logging</strong> - Log specific fields, not entire objects</li>
+            <li><strong>Secure Log Storage</strong> - Encrypt logs at rest, restrict access</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Sanitize logs and use structured logging
+public class UserService
+{
+    private readonly ILogger<UserService> _logger;
+    
+    public async Task<bool> Login(LoginRequest request)
+    {
+        // Log only non-sensitive data
+        _logger.LogInformation(
+            \"Login attempt for user: {Username}\",
+            request.Username);  // Username only
+        
+        try
+        {
+            var result = await _authService.Authenticate(
+                request.Username, request.Password);
+            
+            _logger.LogInformation(
+                \"Successful login for {Username}\",
+                request.Username);
+        }
+        catch (Exception ex)
+        {
+            // Don't log request details
+            _logger.LogWarning(ex,
+                \"Login failed for user: {Username}\",
+                request.Username);
+        }
+    }
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Logging sensitive data
+public class UserService
+{
+    private readonly ILogger<UserService> _logger;
+    
+    public async Task<bool> Login(LoginRequest request)
+    {
+        // Logging complete request object
+        _logger.LogInformation(
+            \"Login attempt: {@Request}\", 
+            request);  // Contains password!
+        
+        // Logging raw password
+        _logger.LogDebug(
+            \"User {Username} logging in with password {Password}\",
+            request.Username, 
+            request.Password);  // NEVER!
+    }
+""";
+
+    private string username = "";
+    private string password = "";
+    private string logContent = "[Application Started]\n";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("sensitive-data-logs")
+            ?? throw new InvalidOperationException($"Vulnerability not found: sensitive-data-logs");
+    }
+
+    private void Login()
+    {
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        logContent += $"\n[{timestamp}] INFO: Login attempt for user: {username}";
+        logContent += $"\n[{timestamp}] DEBUG: Login credentials - Username: {username}, Password: {password}";
+        
+        logContent += $"\n[{timestamp}] INFO: User {username} logged in successfully";
+        logContent += $"\n[{timestamp}] DEBUG: Session token: jwt_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
+    }
+}

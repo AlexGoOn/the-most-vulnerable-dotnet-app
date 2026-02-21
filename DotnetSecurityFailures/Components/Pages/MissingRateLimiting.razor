@@ -1,0 +1,343 @@
+@page "/vulnerabilities/missing-rate-limiting"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject HttpClient HttpClient
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Missing Rate Limiting - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="missing-rate-limiting" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>PIN Authentication System:</h6>
+        <p class="small text-muted">Attempt to login with 4-digit PIN (no rate limiting)</p>
+
+        <div class="mb-3">
+            <label class="form-label">Enter PIN (4 digits):</label>
+            <input type="text" class="form-control" @bind="pin" 
+                   placeholder="Enter 4-digit PIN" maxlength="4" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="AttemptLogin" disabled="@isProcessing">
+            @if (isProcessing)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+            }
+            Try Login
+        </button>
+
+        <button class="btn btn-danger ms-2" @onclick="BruteForceAttack" disabled="@isProcessing">
+            Brute Force Attack
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (attemptCount > 0)
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Attempts Made:</strong> @attemptCount
+                <div class="progress mt-2" style="height: 25px;">
+                    <div class="progress-bar bg-danger" role="progressbar" 
+                         style="width: 100%">
+                        @attemptCount attempts (NO LIMIT!)
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Attack Scenarios:</strong>
+            <ul class="mb-0">
+                <li><strong>Brute Force:</strong> Try all possible PINs (0000-9999)</li>
+                <li><strong>Credential Stuffing:</strong> Test leaked passwords</li>
+                <li><strong>Account Enumeration:</strong> Discover valid usernames</li>
+                <li><strong>Token Exhaustion:</strong> Generate and test OTP codes</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Missing rate limiting allows attackers to make unlimited requests to 
+            sensitive endpoints. This enables brute force attacks, credential stuffing,
+            resource exhaustion, and enumeration without detection or throttling.
+        </p>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Unauthorized access</strong> - accounts compromised via brute force</li>
+            <li><strong>Resource exhaustion</strong> - server CPU/memory overwhelmed</li>
+            <li><strong>Financial loss</strong> - email/SMS service costs spike</li>
+            <li><strong>Account enumeration</strong> - discover valid usernames</li>
+            <li><strong>Data scraping</strong> - extract entire database via pagination</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Missing Rate Limiting:</h5>
+        <ol>
+            <li>
+                <strong>ASP.NET Core Rate Limiting Middleware (.NET 7+)</strong> - built-in support
+            </li>
+            <li>
+                <strong>AspNetCoreRateLimit Library</strong> - for older .NET versions
+            </li>
+            <li>
+                <strong>Distributed Rate Limiting (Redis)</strong> - for multi-server deployments
+            </li>
+            <li>
+                <strong>Multiple Rate Limit Layers</strong> - IP-based, user-based, and endpoint-based
+            </li>
+            <li>
+                <strong>Progressive Delays</strong> - exponential backoff after failures
+            </li>
+            <li>
+                <strong>CAPTCHA Integration</strong> - require verification after threshold
+            </li>
+            <li>
+                <strong>Account Lockout</strong> - temporarily disable after repeated failures
+            </li>
+            <li>
+                <strong>Monitoring and Alerts</strong> - track abuse patterns
+            </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT - Using ASP.NET Core built-in rate limiting (.NET 7+)
+
+// 1. Configure in Program.cs:
+using System.Threading.RateLimiting;
+
+builder.Services.AddRateLimiter(options =>
+{
+    // Fixed window limiter - simple and effective
+    options.AddFixedWindowLimiter("authentication", config =>
+    {
+        config.PermitLimit = 5;
+        config.Window = TimeSpan.FromMinutes(1);
+        config.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        config.QueueLimit = 0; // Don't queue requests
+    });
+    
+    // Sliding window limiter - more granular control
+    options.AddSlidingWindowLimiter("api", config =>
+    {
+        config.PermitLimit = 10;
+        config.Window = TimeSpan.FromMinutes(1);
+        config.SegmentsPerWindow = 6;
+        config.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        config.QueueLimit = 0;
+    });
+    
+    // Token bucket limiter - allows burst traffic
+    options.AddTokenBucketLimiter("burst", config =>
+    {
+        config.TokenLimit = 100;
+        config.ReplenishmentPeriod = TimeSpan.FromMinutes(1);
+        config.TokensPerPeriod = 50;
+        config.AutoReplenishment = true;
+    });
+    
+    // Customize rejection response
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = 429;
+        
+        if (context.Lease.TryGetMetadata(
+            MetadataName.RetryAfter, 
+            out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = 
+                ((int)retryAfter.TotalSeconds).ToString();
+        }
+        
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new
+            {
+                error = "Too many requests",
+                message = "Rate limit exceeded. Please try again later.",
+                retryAfter = retryAfter?.TotalSeconds
+            },
+            cancellationToken);
+    };
+});
+
+app.UseRateLimiter();
+""";
+    private const string VulnerableCode = """
+// VULNERABLE - No rate limiting
+[HttpPost("api/brute-force/login]
+public IActionResult Login([FromBody] LoginRequest request)
+{
+    // DANGEROUS: No throttling, no CAPTCHA, no account lockout
+    if (request.Pin == GetStoredPin(request.Username))
+    {
+        return Ok(new 
+        { 
+            success = true, 
+            message = "Login successful",
+            token = GenerateToken(request.Username)
+        });
+    }
+    
+    return Unauthorized(new 
+    { 
+        success = false, 
+        message = "Invalid PIN" 
+    });
+}
+
+// Attacker script:
+for (int i = 0; i < 10000; i++)
+{
+    var response = await httpClient.PostAsync(
+        "/api/brute-force/login",
+        new { username = "victim@example.com", pin = i.ToString("D4 }
+    );
+    
+    if (response.IsSuccessStatusCode)
+    {
+        Console.WriteLine($"Found PIN: {i:D4};
+        break;
+    }
+    // NO DELAYS - all 10,000 attempts complete in seconds!
+}
+""";
+
+    private string pin = "";
+    private string result = "";
+    private string resultCssClass = "";
+    private bool isProcessing;
+    private int attemptCount = 0;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("missing-rate-limiting")
+            ?? throw new InvalidOperationException($"Vulnerability not found: missing-rate-limiting");
+    }
+
+    private async Task AttemptLogin()
+    {
+        result = "";
+        resultCssClass = "";
+
+        if (string.IsNullOrWhiteSpace(pin) || pin.Length != 4)
+        {
+            result = "Please enter a 4-digit PIN";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        isProcessing = true;
+        attemptCount++;
+
+        try
+        {
+            var response = await HttpClient.PostAsJsonAsync(
+                "/api/vulnerabilities/missing-rate-limiting/login",
+                new { Pin = pin }
+            );
+
+            var responseData = await response.Content.ReadFromJsonAsync<LoginResponse>();
+
+            if (response.IsSuccessStatusCode && responseData?.Success == true)
+            {
+                resultCssClass = "alert alert-success";
+                result = $"Login successful!\n\n{responseData.Message}\n{responseData.SecretData}";
+            }
+            else
+            {
+                resultCssClass = "alert alert-danger";
+                result = $"Login failed: {responseData?.Message ?? "Invalid PIN"}\n\nAttempts made: {attemptCount}\nNO RATE LIMITING - Can try unlimited times!";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultCssClass = "alert alert-danger";
+            result = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task BruteForceAttack()
+    {
+        result = "";
+        resultCssClass = "alert alert-danger";
+        isProcessing = true;
+
+        try
+        {
+            result = "Brute force attack in progress...\n\n";
+            StateHasChanged();
+
+            var startTime = DateTime.Now;
+            var foundPin = "";
+
+            for (int i = 0; i <= 9999; i++)
+            {
+                var testPin = i.ToString("D4");
+                attemptCount++;
+
+                var response = await HttpClient.PostAsJsonAsync(
+                    "/api/vulnerabilities/missing-rate-limiting/login",
+                    new { Pin = testPin }
+                );
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseData = await response.Content.ReadFromJsonAsync<LoginResponse>();
+                    if (responseData?.Success == true)
+                    {
+                        foundPin = testPin;
+                        var duration = (DateTime.Now - startTime).TotalSeconds;
+
+                        result = "VULNERABILITY EXPLOITED!\n\n";
+                        result += $"Brute force attack successful:\n";
+                        result += $"- Correct PIN found: {foundPin}\n";
+                        result += $"- Attempts made: {attemptCount}\n";
+                        result += $"- Time taken: {duration:F2} seconds\n";
+                        result += $"- Rate: {attemptCount / duration:F0} attempts/second\n\n";
+                        result += $"Secret data obtained:\n{responseData.SecretData}\n\n";
+                        
+                        break;
+                    }
+                }
+
+                if (i % 100 == 0)
+                {
+                    result = $"Brute force attack in progress...\n\nTested {i}/10000 PINs ({attemptCount} total attempts)";
+                    StateHasChanged();
+                }
+            }
+
+            if (string.IsNullOrEmpty(foundPin))
+            {
+                result += "\n\nAttack completed but PIN not found in tested range.";
+            }
+        }
+        catch (Exception ex)
+        {
+            result = $"Attack failed: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private class LoginResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public string? SecretData { get; set; }
+    }
+}

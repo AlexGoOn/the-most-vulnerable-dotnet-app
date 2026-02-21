@@ -1,0 +1,229 @@
+@page "/vulnerabilities/csrf"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JsRuntime
+@inject HttpClient HttpClient
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>CSRF (Cross-Site Request Forgery) - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="csrf" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>CSRF Attack Demonstration:</h6>
+        <p class="small text-muted">Exploit missing CSRF protection from a different origin</p>
+
+        <div class="alert alert-info mb-3">
+            <strong>Current User Status:</strong>
+            <div class="mt-2">
+                <strong>Email:</strong> @userInfo.Email<br/>
+                <strong>Balance:</strong> $@userInfo.Balance
+            </div>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>How to reproduce this vulnerability:</strong>
+            <ol class="mb-0 small">
+                <li>Note your current email and balance above</li>
+                <li>Click the button below to open attacker's website (different origin)</li>
+                <li>On the attacker's page, click "Claim Your Prize Now!"</li>
+                <li>Return here and click "Refresh Status" to see the attack result</li>
+                <li>Your balance should decrease by $299.99</li>
+            </ol>
+        </div>
+
+        <div class="alert alert-secondary">
+            <strong>Configuration:</strong><br/>
+            <small>
+                • Main app: <code>https://localhost:7124</code><br/>
+                • Attacker site: <code>http://localhost:5001/csrf</code><br/>
+                • Target endpoint: <code>/api/vulnerabilities/csrf/purchase</code><br/>
+                • CSRF Protection: <code>DISABLED</code><br/>
+                • CORS Policy: <code>VulnerablePolicy</code> (allows any origin)
+            </small>
+        </div>
+
+        <button class="btn btn-danger btn-lg w-100 mb-3" @onclick="OpenAttackerSite">
+            Open Attacker's Website
+        </button>
+
+        <button class="btn btn-secondary w-100 mb-3" @onclick="RefreshUserInfo">
+            Refresh Status
+        </button>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Cross-Site Request Forgery (CSRF)</strong> forces an authenticated user to execute 
+            unwanted actions on a web application. The attacker tricks the victim into submitting a 
+            malicious request, and since browsers automatically include authentication cookies, 
+            the server cannot distinguish legitimate requests from forged ones.
+        </p>
+
+        <h6 class="mt-3">How CSRF attacks work:</h6>
+        <pre class="bg-light p-2 small"><code>1. Victim logs into vulnerable-app.com (gets auth cookie)
+2. Victim visits attacker's malicious website (evil.com)
+3. evil.com makes hidden request to vulnerable-app.com
+4. Browser automatically includes auth cookies
+5. Server processes request as if victim made it
+6. Money transferred, email changed, or data deleted!
+
+Key factors for successful CSRF:
+- VULNERABLE CORS POLICY
+- NO CSRF TOKEN VALIDATION
+- Browser automatically sends cookies
+
+Result: Unauthorized action performed!</code></pre>
+
+        <h6 class="mt-3">Common attack vectors:</h6>
+        <ul>
+            <li><strong>Hidden forms</strong> - auto-submit forms on malicious pages</li>
+            <li><strong>Image tags</strong> - GET requests via &lt;img src="..." /&gt;</li>
+            <li><strong>JavaScript fetch/XHR</strong> - POST requests with credentials</li>
+            <li><strong>Social engineering</strong> - tricking users to click links</li>
+        </ul>
+
+        <h6 class="mt-3">Real-world examples:</h6>
+        <ul>
+            <li><strong>2008 - YouTube:</strong> Profile takeover via CSRF</li>
+            <li><strong>2010 - ING Direct:</strong> Money transfer vulnerability</li>
+            <li><strong>2014 - Facebook:</strong> Account takeover via email change</li>
+            <li><strong>2018 - Cryptocurrency exchanges:</strong> Unauthorized trades</li>
+        </ul>
+    </ExplanationContent>
+
+    <PreventionContent>
+        <h5>Protection Against CSRF:</h5>
+        <ol>
+            <li><strong>Use AutoValidateAntiforgeryToken</strong> - Apply globally</li>
+            <li><strong>Enable UseAntiforgery() middleware</strong> - NEW in .NET 7+</li>
+            <li><strong>Blazor Server</strong> - Automatic Protection with InteractiveServer</li>
+            <li><strong>SameSite cookies (Strict mode)</strong> - Prevent cross-site sending</li>
+            <li><strong>Strict CORS policy</strong> - Whitelist specific origins</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Modern CSRF protection in .NET 10
+
+// 1. Configure in Program.cs
+builder.Services.AddAntiforgery(options =>
+{{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+}});
+
+app.UseAntiforgery();
+
+// 2. Controller with AutoValidateAntiforgeryToken
+[ApiController]
+[Route("api/[controller]]
+[AutoValidateAntiforgeryToken]
+public class SecureController : ControllerBase
+{{
+    [HttpPost("purchase]
+    public IActionResult PurchaseProduct([FromBody] PurchaseRequest request)
+    {{
+        // AutoValidateAntiforgeryToken validates automatically
+        return Ok(new {{ success = true }});
+    }}
+}}
+
+// 3. Blazor Server (AUTOMATICALLY PROTECTED)
+<EditForm Model="@@model" OnValidSubmit="HandleSubmit">
+    <button type="submit">Purchase</button>
+</EditForm>
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: No CSRF protection + vulnerable CORS policy
+[ApiController]
+[Route("api/[controller]]
+[EnableCors("VulnerablePolicy] // Allows ANY origin!
+public class VulnerableController : ControllerBase
+{{
+    [HttpPost("purchase]
+    public IActionResult PurchaseProduct([FromBody] PurchaseRequest request)
+    {{
+        // NO CSRF TOKEN VALIDATION!
+        // NO Origin header validation!
+        // Browser automatically sends auth cookies
+        
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier).Value;
+        _paymentService.ProcessPayment(userId, request.Amount);
+        
+        return Ok(new {{ success = true }});
+    }}
+}}
+
+//in Program.cs
+builder.Services.AddCors(options =>
+{
+    // Reflects any origin with credentials
+    options.AddPolicy("VulnerablePolicy", policy =>
+    {
+        policy
+            .SetIsOriginAllowed(_ => true) // CRITICAL: Allows ALL origins!
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials(); // With credentials = VERY DANGEROUS!
+    });
+});
+""";
+    private UserInfo userInfo = new();
+    private decimal previousBalance = 1000.00m;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("csrf")
+            ?? throw new InvalidOperationException($"Vulnerability not found: csrf");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshUserInfo();
+    }
+
+    private async Task RefreshUserInfo()
+    {
+        try
+        {
+            previousBalance = userInfo.Balance;
+            
+            var response = await HttpClient.GetFromJsonAsync<BalanceResponse>(
+                "/api/vulnerabilities/csrf/balance");
+            
+            if (response != null)
+            {
+                userInfo.Balance = response.Balance;
+                userInfo.Email = response.UserEmail ?? "user@example.com";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing user info: {ex.Message}");
+        }
+    }
+
+    private async Task OpenAttackerSite()
+    {
+        var url = "http://localhost:5001/csrf";
+        await JsRuntime.InvokeVoidAsync("open", url, "_blank", "noopener,noreferrer");
+    }
+
+    private class UserInfo
+    {
+        public string Email { get; set; } = "user@example.com";
+        public decimal Balance { get; set; } = 1000.00m;
+    }
+
+    private class BalanceResponse
+    {
+        public decimal Balance { get; set; }
+        public string Currency { get; set; } = "";
+        public string UserEmail { get; set; } = "";
+    }
+}

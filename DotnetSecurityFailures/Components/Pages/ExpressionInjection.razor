@@ -1,0 +1,230 @@
+@page "/vulnerabilities/expression-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using System.Linq.Dynamic.Core
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Expression Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="expression-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Dynamic Product Search with Expression Language:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="filterExpression" 
+                   placeholder='e.g., Name.Contains("Laptop")' />
+            <button class="btn btn-primary" @onclick="SearchProducts">Search</button>
+        </div>
+        <small class="text-muted">Enter a Dynamic LINQ expression to filter products</small>
+
+        @if (!string.IsNullOrEmpty(executedExpression))
+        {
+            <div class="alert alert-info mt-3">
+                <strong>Executed Expression:</strong>
+                <pre class="mb-0 mt-2 small"><code>products.Where("@executedExpression")</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(searchResults))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Query Results:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap; font-family: 'Courier New', monospace; word-wrap: break-word;">@searchResults</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetExpression(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>Dynamic LINQ allows building queries from string expressions at runtime using libraries like <code>System.Linq.Dynamic.Core</code>. When user input is directly used in expressions, attackers can inject arbitrary code.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: true
+
+Query becomes:
+products.Where("true")
+
+Result: Condition always TRUE, returns ALL products including hidden ones!</code></pre>
+
+        <h6 class="mt-3">Complex injection example:</h6>
+        <pre class="bg-light p-2 small"><code>Input: Price == (1+1==2 ? 100 : 0)
+
+Query becomes:
+products.Where("Price == (1+1==2 ? 100 : 0)")
+
+Result: Expression evaluates code (1+1==2), executes ternary operator
+This demonstrates arbitrary code execution in expression context!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Data exfiltration</strong> - modify queries to return sensitive data</li>
+            <li><strong>Authentication bypass</strong> - inject always-true conditions</li>
+            <li><strong>Business logic bypass</strong> - alter pricing, permissions, access controls</li>
+            <li><strong>Denial of Service</strong> - create expensive operations or exceptions</li>
+            <li><strong>Code execution</strong> - call methods on objects (limited by expression context)</li>
+            <li><strong>Information disclosure</strong> - access hidden products, internal data</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Expression Language Injection:</h5>
+        <ol>
+            <li><strong>Avoid Dynamic Expressions</strong> - don't use Dynamic LINQ or expression evaluation with user input</li>
+            <li><strong>Use Strongly-Typed LINQ</strong> - build queries with compile-time checked expressions</li>
+            <li><strong>Whitelist Approach</strong> - if dynamic behavior needed, use predefined options only</li>
+            <li><strong>Input Validation</strong> - strictly validate any parameters used in queries</li>
+            <li><strong>Expression Trees</strong> - if dynamic queries required, build <code>Expression&lt;T&gt;</code> programmatically</li>
+            <li><strong>Read-Only Context</strong> - ensure query context cannot modify data</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Use strongly-typed LINQ with predefined options
+private void SafeSearch(
+    string searchTerm,
+    string sortField,
+    decimal? minPrice,
+    decimal? maxPrice)
+{
+    var query = products.AsQueryable();
+
+    // SAFE: Use strongly-typed predicates
+    if (!string.IsNullOrEmpty(searchTerm))
+    {
+        query = query.Where(p => p.Name.Contains(searchTerm));
+    }
+
+    var results = query.ToList();
+}
+
+// Input: searchTerm = "true" or "1+1==2"
+// Treated as literal string in Contains()
+// No code execution - attack prevented!
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: User input in Dynamic LINQ expression
+using System.Linq.Dynamic.Core;
+
+private void SearchProducts()
+{
+    var query = products.AsQueryable();
+
+    // DANGER: User input directly in Where expression
+    var filtered = query.Where(filterExpression); // vulnerable: executes user-provided expression
+
+    var results = filtered.ToList();
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string filterExpression = "";
+    private string? executedExpression;
+    private string? searchResults;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("expression-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: expression-injection");
+    }
+
+    private class Product
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public decimal Price { get; set; }
+        public string Category { get; set; } = "";
+    }
+
+    private List<Product> products = new()
+    {
+        new() { Id = 1, Name = "Laptop", Price = 1200, Category = "Electronics" },
+        new() { Id = 2, Name = "Mouse", Price = 25, Category = "Accessories" },
+        new() { Id = 3, Name = "Keyboard", Price = 75, Category = "Accessories" },
+        new() { Id = 4, Name = "Monitor", Price = 350, Category = "Electronics" },
+        new() { Id = 5, Name = "Webcam", Price = 89, Category = "Electronics" },
+        new() { Id = 99, Name = "SECRET_ADMIN_PRODUCT", Price = 99999, Category = "Internal" }
+    };
+
+    private void SearchProducts()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(filterExpression))
+        {
+            searchResults = "Please enter a filter expression";
+            return;
+        }
+
+        try
+        {
+            // VULNERABLE: User input directly in Dynamic LINQ expression
+            var query = products.AsQueryable();
+            var filtered = query.Where(filterExpression); // DANGER!
+            var results = filtered.ToList();
+
+            executedExpression = filterExpression;
+            searchResults = $"Found {results.Count} product(s):\n\n";
+
+            foreach (var product in results)
+            {
+                searchResults += $"[{product.Id}] {product.Name} - ${product.Price} ({product.Category})\n";
+                
+                if (product.Category == "Internal")
+                {
+                    searchResults += "      WARNING: This is a HIDDEN product that should not be accessible!\n";
+                }
+            }
+
+            var predefinedAttack = vulnerability.PredefinedAttacks
+                .FirstOrDefault(a => a.Input == filterExpression);
+            attackAnalysis = predefinedAttack?.Description ?? "Custom expression executed successfully.";
+        }
+        catch (Exception ex)
+        {
+            executedExpression = filterExpression;
+            searchResults = $"Error: {ex.GetType().Name}\nMessage: {ex.Message}";
+            attackAnalysis = $"EXCEPTION CAUSED BY MALICIOUS EXPRESSION!\n\n" +
+                           $"Error: {ex.GetType().Name}\n" +
+                           $"Message: {ex.Message}\n\n" +
+                           $"This could lead to:\n" +
+                           $"- Application crash (DoS)\n" +
+                           $"- Information leakage via error messages\n" +
+                           $"- Resource exhaustion";
+        }
+    }
+
+    private void SetExpression(string expr)
+    {
+        filterExpression = expr;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        executedExpression = null;
+        searchResults = null;
+        attackAnalysis = null;
+    }
+}

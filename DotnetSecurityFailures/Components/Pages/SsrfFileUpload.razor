@@ -1,0 +1,338 @@
+@page "/vulnerabilities/ssrf-file-upload"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject HttpClient HttpClient
+
+<PageTitle>SSRF via File Upload - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="ssrf-file-upload" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="alert alert-info">
+            <strong>Scenario:</strong> SVG Image Embedder - converts external image references into embedded data URIs
+            to create standalone SVG files (common for PDF or Email).
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">SVG Content:</label>
+            <textarea class="form-control" 
+                      rows="6" 
+                      @bind="svgContent"
+                      placeholder="<svg xmlns='http://www.w3.org/2000/svg'>..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" @onclick="ProcessSvg" disabled="@isProcessing">
+            @(isProcessing ? "Processing..." : "Process SVG")
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (externalRequests.Any())
+        {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>Server-Side Image Fetches (for embedding as data URIs):</strong>
+                </div>
+                <div class="card-body">
+                    @foreach (var req in externalRequests)
+                    {
+                        <div class="border-bottom pb-2 mb-2">
+                            <strong class="@(req.IsInternal ? "text-danger" : "text-primary")">
+                                @req.Url
+                            </strong>
+                            @if (req.IsInternal)
+                            {
+                                <span class="badge bg-danger ms-2">INTERNAL</span>
+                            }
+                            <br />
+                            <small class="text-muted">
+                                @if (req.Success)
+                                {
+                                    <span class="text-success">Status: @req.StatusCode</span>
+                                    @if (!string.IsNullOrEmpty(req.ContentPreview))
+                                    {
+                                        <br />
+                                        <span>Preview: @req.ContentPreview</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-warning">Error: @req.Error</span>
+                                }
+                            </small>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these payloads:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetSvgContent(SafeSvgExample)'>Safe SVG</code>
+                    - with embedded data URI
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetSvgContent(MaliciousSvgExample)'>Malicious SVG</code>
+                    - with internal network URLs
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            SSRF via File Upload occurs when uploaded files (especially SVG, XML) contain references 
+            to external resources that the server processes without validation.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. User uploads SVG with external reference:
+   &lt;svg&gt;
+     &lt;image href='http://169.254.169.254/latest/meta-data/' /&gt;
+   &lt;/svg&gt;
+2. Server parses SVG and finds image element
+3. Server fetches the href URL (SSRF)
+4. AWS metadata service responds with credentials
+5. Response embedded in processed SVG or logged
+
+Result: Internal services accessed, credentials stolen!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Cloud metadata:</strong> AWS/Azure/GCP credentials exposed</li>
+            <li><strong>Network scanning:</strong> Discover internal services and ports</li>
+            <li><strong>Bypass firewall:</strong> Access internal resources</li>
+            <li><strong>Data exfiltration:</strong> Read internal files and databases</li>
+            <li><strong>Credential theft:</strong> Steal API keys, tokens, passwords</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against SSRF via File Upload:</h5>
+        <ol>
+            <li><strong>Disable External Entities:</strong> Set XmlResolver = null, DtdProcessing = Prohibit</li>
+            <li><strong>Strip External References:</strong> Remove href/src attributes from untrusted files</li>
+            <li><strong>Use URL Allowlist:</strong> Only permit specific trusted domains</li>
+            <li><strong>Block Private IPs:</strong> Reject 127.x, 10.x, 192.168.x, 169.254.x</li>
+            <li><strong>Network Segmentation:</strong> Isolate file processing servers</li>
+            <li><strong>Content Security Policies:</strong> Restrict embedded content access</li>
+            <li><strong>Validate Schemes:</strong> Only allow safe protocols like data: URIs</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Demonstrates 
+[HttpPost("api/svg/process]
+public async Task ProcessSvgSafely(Stream svgStream)
+{
+    // 1. Disable external entity processing
+    var settings = new XmlReaderSettings
+    {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null
+    };
+    
+    using var reader = XmlReader.Create(svgStream, settings);
+    var doc = XDocument.Load(reader);
+    var ns = XNamespace.Get("http://www.w3.org/2000/svg;
+    
+    var images = doc.Descendants(ns + "image;
+    
+    foreach (var img in images)
+    {
+        var href = img.Attribute("href?.Value;
+        
+        if (string.IsNullOrEmpty(href))
+            continue;
+        
+        // 2. Only allow data URIs - strip external refs
+        if (!href.StartsWith("data:", 
+            StringComparison.OrdinalIgnoreCase))
+        {
+            img.Attribute("href?.Remove();
+            continue;
+        }
+        
+        // 3. Validate data URI format
+        if (!IsValidDataUri(href))
+            throw new SecurityException("Invalid data URI;
+    }
+}
+
+private bool IsValidDataUri(string uri)
+{
+    var allowedTypes = new[] 
+    { 
+        "image/png", "image/jpeg", "image/svg+xml" 
+    };
+    // Validation logic...
+    return true;
+}
+""";
+    private const string VulnerableCode = """
+// VULNERABLE: Processes external refs
+[HttpPost("api/svg/process]
+public async Task ProcessSvg(Stream svgStream)
+{
+    var doc = XDocument.Load(svgStream);
+    var ns = XNamespace.Get("http://www.w3.org/2000/svg;
+    
+    var images = doc.Descendants(ns + "image;
+    
+    foreach (var img in images)
+    {
+        var href = img.Attribute("href?.Value;
+        
+        if (!string.IsNullOrEmpty(href))
+        {
+            // DANGEROUS: Fetches ANY URL!
+            using var client = new HttpClient();
+            var imageData = await client.GetByteArrayAsync(href);
+            // Process/embed image...
+        }
+    }
+}
+
+// Attacker uploads SVG with internal URLs:
+// <image href="http://169.254.169.254/latest/meta-data/" />
+// Server fetches AWS credentials!
+""";
+
+    private Vulnerability? vulnerability;
+    private string svgContent = "";
+    private string result = "";
+    private string resultCssClass = "";
+    private bool isProcessing = false;
+    private List<ExternalRequestInfo> externalRequests = new();
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("ssrf-file-upload")
+            ?? throw new InvalidOperationException($"Vulnerability not found: ssrf-file-upload");
+    }
+
+    private const string SafeSvgExample = """
+<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>
+  <circle cx='100' cy='100' r='50' fill='blue'/>
+  <image href='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' />
+</svg>
+""";
+
+    private const string MaliciousSvgExample = """
+<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'>
+  <image href='http://localhost:5003' />
+</svg>
+""";
+
+    private async Task ProcessSvg()
+    {
+        result = "";
+        resultCssClass = "";
+        externalRequests.Clear();
+        isProcessing = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(svgContent))
+            {
+                result = "Please enter SVG content";
+                resultCssClass = "alert alert-warning";
+                return;
+            }
+
+            var response = await HttpClient.PostAsJsonAsync("/api/vulnerabilities/xss-svg/process", new
+            {
+                svgContent = svgContent
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseData = await response.Content.ReadFromJsonAsync<SvgProcessResponse>();
+
+                if (responseData?.Success == true)
+                {
+                    externalRequests = responseData.ExternalRequests ?? new();
+
+                    if (responseData.IsVulnerable)
+                    {
+                        resultCssClass = "alert alert-danger";
+                        result = "SSRF VULNERABILITY TRIGGERED!\n\n" +
+                                "The server made requests to internal/private network addresses!\n" +
+                                "Attackers can:\n" +
+                                "- Access cloud metadata services (AWS/Azure credentials)\n" +
+                                "- Scan internal network and discover services\n" +
+                                "- Bypass firewall and access restricted resources\n" +
+                                "- Exfiltrate data from internal systems";
+                    }
+                    else if (externalRequests.Any())
+                    {
+                        resultCssClass = "alert alert-warning";
+                        result = "SVG processed with external requests.\n" +
+                                "External URLs were fetched by the server.";
+                    }
+                    else
+                    {
+                        resultCssClass = "alert alert-success";
+                        result = "SVG processed successfully.\n" +
+                                "No external references found.";
+                    }
+                }
+                else
+                {
+                    resultCssClass = "alert alert-warning";
+                    result = responseData?.Message ?? "Failed to process SVG";
+                }
+            }
+            else
+            {
+                resultCssClass = "alert alert-warning";
+                result = $"Request failed: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultCssClass = "alert alert-danger";
+            result = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void SetSvgContent(string content)
+    {
+        svgContent = content;
+        result = "";
+        resultCssClass = "";
+        externalRequests.Clear();
+    }
+
+    private class SvgProcessResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public List<ExternalRequestInfo>? ExternalRequests { get; set; }
+        public bool IsVulnerable { get; set; }
+    }
+
+    private class ExternalRequestInfo
+    {
+        public string Url { get; set; } = "";
+        public bool Success { get; set; }
+        public int StatusCode { get; set; }
+        public string Error { get; set; } = "";
+        public string ContentPreview { get; set; } = "";
+        public int ContentLength { get; set; }
+        public bool IsInternal { get; set; }
+    }
+}

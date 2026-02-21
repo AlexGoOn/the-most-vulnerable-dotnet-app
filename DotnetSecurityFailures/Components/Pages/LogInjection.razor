@@ -1,0 +1,232 @@
+@page "/vulnerabilities/log-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Log Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="log-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Login Form with Logging:</h6>
+        <div class="mb-3">
+            <label class="form-label">Username:</label>
+            <input type="text" class="form-control" @bind="loginUsername" 
+                   placeholder="john.doe" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Password:</label>
+            <input type="password" class="form-control" @bind="loginPassword" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="AttemptLogin">Login</button>
+
+        @if (logEntries.Any())
+        {
+            <div class="alert alert-secondary mt-3">
+                <strong>Log file (application.log):</strong>
+                <pre class="mb-0 mt-2 bg-dark text-light p-2" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">@GetLogContent()</pre>
+            </div>
+        }
+
+        @if (loginResult != null)
+        {
+            <div class="alert alert-@(isSuccess ? "success" : "danger") mt-3" style="white-space: pre-wrap;">
+                @loginResult
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these injections:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername("admin"))">admin</code> - normal login attempt</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername($"admin\\n[{DateTime.Now.AddMinutes(1):yyyy-MM-dd HH:mm:ss}] INFO: User admin logged in successfully"))">admin\n[...] INFO: User admin logged in successfully</code> - fake success entry</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername($"test\\r\\n[{DateTime.Now.AddMinutes(2):yyyy-MM-dd HH:mm:ss}] ERROR: System compromised"))">test\r\n[...] ERROR: System compromised</code> - fake error entry</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername($"user\\n[{DateTime.Now.AddMinutes(3):yyyy-MM-dd HH:mm:ss}] SUCCESS: Password changed for admin"))">user\n[...] SUCCESS: Password changed for admin</code> - forge admin action</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>Code logs user input without sanitization, allowing attackers to inject newline characters to create fake log entries.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: admin\n[2024-01-01 12:00:00] INFO: User admin logged in successfully
+
+Logger writes:
+[2024-01-01 11:59:00] WARN: Failed login attempt for user: admin
+[2024-01-01 12:00:00] INFO: User admin logged in successfully
+
+Result: Two entries from single input - second one is FORGED!</code></pre>
+
+        <h6 class="mt-3">Why this is dangerous:</h6>
+        <pre class="bg-light p-2 small"><code>Original log entry:
+WARN: Failed login attempt for user: test
+
+Injected input: test\nINFO: User admin logged in successfully
+
+Resulting log shows:
+WARN: Failed login attempt for user: test
+INFO: User admin logged in successfully
+
+Security team sees successful admin login after failed test login!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Forged log entries</strong> - create fake successful logins, transactions</li>
+            <li><strong>Hiding attacks</strong> - bury malicious activity in noise</li>
+            <li><strong>Bypassing SIEM systems</strong> - fool automated monitoring</li>
+            <li><strong>False alerts for SOC</strong> - waste security team resources</li>
+            <li><strong>Compromised forensics</strong> - impossible to trust logs during incident investigation</li>
+            <li><strong>Compliance violations</strong> - unreliable audit trails (SOX, PCI DSS)</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Log Injection:</h5>
+        <ol>
+            <li><strong>Structured logging</strong> - use ILogger with parameters, not string interpolation</li>
+            <li><strong>Escaping</strong> - remove or escape <code>\n</code>, <code>\r</code>, <code>\t</code> from user input</li>
+            <li><strong>JSON logs</strong> - use Serilog or NLog with JSON format (prevents line-based injection)</li>
+            <li><strong>Don't log sensitive data</strong> - NEVER log passwords, tokens, credit cards, PII</li>
+            <li><strong>Regular monitoring</strong> - automated analysis to detect suspicious patterns</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Structured logging with parameters
+public void Login(string username, string password)
+{
+    var user = _db.Users.FirstOrDefault(u => u.Username == username);
+    
+    if (user == null || !VerifyPassword(password))
+    {
+        // Parameterized logging - automatically escaped
+        _logger.LogWarning(
+            \"Failed login attempt for user: {Username}\", 
+            username  // Newlines will be escaped
+        );
+        throw new UnauthorizedAccessException();
+    }
+    
+    _logger.LogInformation(
+        \"User {Username} logged in from {IpAddress}\", 
+        username, 
+        ipAddress
+    );
+}
+
+// Manual escaping if needed
+private string SanitizeForLog(string input)
+{
+    if (string.IsNullOrEmpty(input)) return input;
+    
+    return input
+        .Replace(\"\\r\", \"\\\\r\
+        .Replace(\"\\n\", \"\\\\n\
+        .Replace(\"\\t\", \"\\\\t\;
+}
+
+// Best: Structured logs (JSON format)
+_logger.LogInformation(
+    \"Login attempt: {User} {Result} {Timestamp}\",
+    username,
+    success ? \"SUCCESS\" : \"FAILED\",
+    DateTime.UtcNow
+);
+// Output: {\"User\":\"admin\",\"Result\":\"FAILED\",...}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Direct logging of user input
+public void Login(string username, string password)
+{
+    var user = _db.Users.FirstOrDefault(u => u.Username == username);
+    
+    if (user == null || !VerifyPassword(password))
+    {
+        // Newlines \\n \\r will create new entries!
+        _logger.LogWarning($\"Failed login attempt for user: {username}\;
+        throw new UnauthorizedAccessException();
+    }
+    
+    _logger.LogInformation($\"User {username} logged in from {ipAddress}\;
+}
+
+// Input: admin\\n[2024-01-01 12:00:00] INFO: User admin logged in successfully
+// Resulting log:
+// [2024-01-01 11:59:00] WARN: Failed login attempt for user: admin
+// [2024-01-01 12:00:00] INFO: User admin logged in successfully
+// Second line is FORGED by attacker!
+""";
+
+    private string loginUsername = "";
+    private string loginPassword = "";
+    private List<string> logEntries = new();
+    private string? loginResult;
+    private bool isSuccess;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("log-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: log-injection");
+    }
+
+    private string GetLogContent()
+    {
+        return string.Join("\n", logEntries);
+    }
+
+    private void AttemptLogin()
+    {
+        loginResult = null;
+        isSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(loginUsername))
+        {
+            loginResult = "Enter username";
+            return;
+        }
+
+        string processedUsername = loginUsername
+            .Replace("\\n", "\n")
+            .Replace("\\r", "\r")
+            .Replace("\\t", "\t");
+        
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        bool validUser = processedUsername.ToLower() is "admin" or "john" or "jane";
+        
+        if (!validUser || loginPassword != "correct")
+        {
+            string logEntry = $"[{timestamp}] WARN: Failed login attempt for user: {processedUsername}";
+            logEntries.Add(logEntry);
+            
+            loginResult = "Invalid credentials";
+        }
+        else
+        {
+            string logEntry = $"[{timestamp}] INFO: User {processedUsername} logged in successfully";
+            logEntries.Add(logEntry);
+            loginResult = "Successful login";
+            isSuccess = true;
+        }
+
+        if (processedUsername.Contains('\n') || processedUsername.Contains('\r'))
+        {
+            loginResult = "LOG INJECTION DETECTED!\n\n" +
+                         "Look at the log output above - you see multiple lines from single input!\n" +
+                         "The injected entries appear as legitimate log lines.\n\n" +
+                         "Impact:\n" +
+                         "- Forged log entries created\n" +
+                         "- Can hide malicious activity\n" +
+                         "- Forensic analysis compromised\n" +
+                         "- SIEM/SOC teams misled";
+            isSuccess = false;
+        }
+    }
+
+    private void SetUsername(string term)
+    {
+        loginUsername = term;
+        loginResult = null;
+    }
+}

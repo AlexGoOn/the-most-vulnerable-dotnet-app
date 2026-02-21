@@ -1,0 +1,281 @@
+@*
+    Vulnerability: Path Traversal
+    Slug: path-traversal
+    Category: File Operations
+    Severity: Critical
+    
+    Controller: PathTraversalController
+    
+    Description: Reading arbitrary files through path manipulation (../)
+*@
+@page "/vulnerabilities/path-traversal"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject HttpClient HttpClient
+
+<PageTitle>@vulnerability.Title - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="@Slug" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Document Download System:</h6>
+        <p class="small text-muted">Download files from the documents folder</p>
+
+        <div class="mb-3">
+            <label class="form-label">Filename:</label>
+            <input type="text" class="form-control" @bind="filename" placeholder="report.pdf" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="DownloadFile">
+            Download
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(requestedPath))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Requested Path:</strong>
+                <pre class="mb-0 mt-2 small">@requestedPath</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(fileContent))
+        {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>File Content:</strong>
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.85em; max-height: 200px; overflow-y: auto;">@fileContent</pre>
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these payloads:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilename("../Program.cs")'>../Program.cs</code>
+                    - read source code
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilename("../appsettings.json")'>../appsettings.json</code>
+                    - read app config
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilename("../../DotnetSecurityFailures.csproj")'>../../DotnetSecurityFailures.csproj</code>
+                    - read project file
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilename("../Controllers/PathTraversalController.cs")'>../Controllers/PathTraversalController.cs</code>
+                    - read controller
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Path Traversal (Directory Traversal) occurs when an application uses user input 
+            to construct file paths without proper validation. Attackers use special sequences 
+            like <code>../</code> to navigate outside the intended directory.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application expects filename in documents folder:
+   GET /api/vulnerabilities/path-traversal/download?filename=report.pdf
+   ? C:\App\Documents\report.pdf
+
+2. Attacker provides path traversal sequence:
+   GET /api/vulnerabilities/path-traversal/download?filename=../appsettings.json
+   ? C:\App\Documents\..\appsettings.json
+   ? C:\App\appsettings.json
+
+3. Path.Combine() doesn't prevent traversal:
+   Path.Combine("Documents", "../secret.txt")
+   ? "Documents\..\secret.txt" (valid!)
+
+4. System resolves the path and reads sensitive file
+
+Result: Configuration files, source code, secrets exposed!</code></pre>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Source code disclosure</strong> - attacker reads application code</li>
+            <li><strong>Configuration exposure</strong> - database credentials, API keys leaked</li>
+            <li><strong>System file access</strong> - /etc/passwd, hosts file, SAM database</li>
+            <li><strong>Credential theft</strong> - secrets from config files</li>
+            <li><strong>Information gathering</strong> - project structure, dependencies</li>
+        </ul>
+    </ExplanationContent>
+
+    <PreventionContent>
+        <h5>Protection Against Path Traversal:</h5>
+        <ol>
+            <li><strong>Whitelist allowed files</strong> - maintain list of valid filenames or IDs</li>
+            <li><strong>Use Path.GetFileName()</strong> - strips directory information completely</li>
+            <li><strong>Validate with Path.GetFullPath()</strong> - resolve and verify path is within allowed directory</li>
+            <li><strong>Use file IDs instead of names</strong> - map database IDs to physical files</li>
+            <li><strong>Implement chroot/jail</strong> - restrict file access at operating system level</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = "path-traversal";
+    
+    private Vulnerability vulnerability = null!;
+    
+    private string filename = "";
+    private string result = "";
+    private string requestedPath = "";
+    private string fileContent = "";
+    private string resultCssClass = "";
+
+    private const string VulnerableCode = """
+// DANGEROUS: Direct path concatenation
+[HttpGet("download")]
+public IActionResult DownloadFile([FromQuery] string filename)
+{
+    // User input directly concatenated!
+    var filePath = Path.Combine("Documents", filename);
+    
+    if (System.IO.File.Exists(filePath))
+    {
+        var content = System.IO.File.ReadAllText(filePath);
+        return Ok(new { content });
+    }
+    
+    return NotFound();
+}
+""";
+
+    private const string SafeCode = """
+[HttpGet("download")]
+public IActionResult DownloadFile([FromQuery] string filename)
+{
+    // Resolve and normalize the allowed base directory
+    var basePath = Path.GetFullPath("Documents");
+
+    // Remove any path information from user input
+    var safeFileName = Path.GetFileName(filename);
+
+    // Build and canonicalize the full file path
+    var fullPath = Path.GetFullPath(
+        Path.Combine(basePath, safeFileName)
+    );
+
+    // Ensure the file stays within the allowed directory
+    if (!fullPath.StartsWith(
+            basePath + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase))
+    {
+        return BadRequest("Access denied");
+    }
+
+    // Allow only specific file types
+    var allowedExtensions = new[] { ".pdf", ".docx", ".txt" };
+    if (!allowedExtensions.Contains(
+            Path.GetExtension(fullPath).ToLowerInvariant()))
+    {
+        return BadRequest("File type not allowed");
+    }
+
+    // Return 404 if the file does not exist
+    if (!System.IO.File.Exists(fullPath))
+    {
+        return NotFound();
+    }
+
+    // Stream the file instead of loading it into memory
+    return PhysicalFile(
+        fullPath,
+        "application/octet-stream",
+        enableRangeProcessing: true
+    );
+}
+""";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug(Slug) 
+            ?? throw new InvalidOperationException($"Vulnerability not found: {Slug}");
+    }
+
+    private async Task DownloadFile()
+    {
+        result = "";
+        requestedPath = "";
+        fileContent = "";
+        resultCssClass = "";
+
+        if (string.IsNullOrWhiteSpace(filename))
+        {
+            result = "Please enter a filename";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        try
+        {
+            var response = await HttpClient.GetFromJsonAsync<DownloadResponse>(
+                $"/api/vulnerabilities/path-traversal/download?filename={Uri.EscapeDataString(filename)}"
+            );
+
+            if (response?.Success == true)
+            {
+                requestedPath = response.RequestedPath;
+                fileContent = response.Content;
+
+                var isTraversal = filename.Contains("..") || 
+                                 filename.Contains("/") || 
+                                 filename.Contains("\\");
+
+                if (isTraversal)
+                {
+                    resultCssClass = "alert alert-danger";
+                    result = "PATH TRAVERSAL SUCCESSFUL!\n\n" +
+                            "The application read a file outside the documents directory!\n" +
+                            "Attackers can access configuration files, source code, and secrets.";
+                }
+                else
+                {
+                    resultCssClass = "alert alert-success";
+                    result = $"File downloaded successfully: {filename}";
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            resultCssClass = "alert alert-warning";
+            result = $"Request failed: {ex.Message}";
+        }
+    }
+
+    private void SetFilename(string payload)
+    {
+        filename = payload;
+        result = "";
+        requestedPath = "";
+        fileContent = "";
+        resultCssClass = "";
+    }
+
+    private class DownloadResponse
+    {
+        public bool Success { get; set; }
+        public string RequestedPath { get; set; } = "";
+        public string Filename { get; set; } = "";
+        public string Content { get; set; } = "";
+        public string Message { get; set; } = "";
+    }
+}

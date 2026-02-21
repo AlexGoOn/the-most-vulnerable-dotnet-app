@@ -1,0 +1,27 @@
+@* 
+    Reusable component for displaying attack payloads with click-to-copy functionality
+*@
+@using DotnetSecurityFailures.Models
+
+<div class="alert alert-dark">
+    <strong>Try these payloads:</strong>
+    <ul class="mb-0">
+        @foreach (var payload in Payloads)
+        {
+            <li>
+                <code style="cursor: pointer;" @onclick="() => OnPayloadSelected?.Invoke(payload.Code)">
+                    @payload.Code
+                </code>
+                - @payload.Description
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public AttackPayload[] Payloads { get; set; } = Array.Empty<AttackPayload>();
+
+    [Parameter]
+    public Action<string>? OnPayloadSelected { get; set; }
+}

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<profiles>
+	<!-- Sample user profiles -->
+	<user id="1">
+		<name>John Doe</name>
+		<email>john@example.com</email>
+		<bio>Software developer</bio>
+		<role>user</role>
+		<balance>100</balance>
+		<isAdmin>false</isAdmin>
+	</user>
+
+	<user id="2">
+		<name>Jane Smith</name>
+		<email>jane@example.com</email>
+		<bio>Project manager</bio>
+		<role>user</role>
+		<balance>250</balance>
+		<isAdmin>false</isAdmin>
+	</user>
+
+	<user id="3">
+		<name>Bob Wilson</name>
+		<email>bob@example.com</email>
+		<bio>UI/UX designer</bio>
+		<role>user</role>
+		<balance>150</balance>
+		<isAdmin>false</isAdmin>
+	</user>
+
+	<user>
+  <name></name><role>admin</role><name></name>
+  <email></email>
+  <bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+
+	<user>
+  <name></name><role>admin</role><name></name>
+  <email></email>
+  <bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+
+	<user>
+  <name></name><role>admin</role><name></name>
+  <email></email><balance>999999</balance><email></email>
+  <bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+
+	<user>
+  <name></name><role>admin</role><name></name>
+  <email></email><balance>999999</balance><email></email>
+  <bio></bio><isAdmin>true</isAdmin><bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+
+	<user>
+  <name></name><role>admin</role><name></name>
+  <email></email>
+  <bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+
+	<user>
+  <name>dfdsfsdf</name>
+  <email></email>
+  <bio></bio>
+  <role>user</role>
+  <balance>100</balance>
+  <isAdmin>false</isAdmin>
+</user>
+</profiles>

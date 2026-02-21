@@ -1,0 +1,40 @@
+Employee Records - Q4 2024
+===========================
+
+Employee ID: EMP-001
+Name: Sarah Johnson
+Position: Senior Developer
+Salary: $125,000/year
+SSN: 234-56-7890
+Date of Birth: 1985-03-15
+Bank Account: 1234567890 (Chase Bank)
+Emergency Contact: Michael Johnson (555-0145)
+Home Address: 456 Oak Avenue, Anytown, USA
+
+Employee ID: EMP-002
+Name: Michael Chen
+Position: DevOps Engineer
+Salary: $135,000/year
+SSN: 345-67-8901
+Date of Birth: 1982-07-22
+Bank Account: 2345678901 (Bank of America)
+Emergency Contact: Lisa Chen (555-0156)
+Home Address: 789 Pine Street, Anytown, USA
+
+Employee ID: EMP-003
+Name: Emily Rodriguez
+Position: Product Manager
+Salary: $145,000/year
+SSN: 456-78-9012
+Date of Birth: 1988-11-30
+Bank Account: 3456789012 (Wells Fargo)
+Emergency Contact: Carlos Rodriguez (555-0167)
+Home Address: 321 Elm Drive, Anytown, USA
+
+Performance Reviews:
+- Bonuses paid: $45,000 (total)
+- Stock options granted: 15,000 shares
+- Health insurance: UnitedHealthcare Group #GRP-123456
+
+CONFIDENTIAL - HR Department Only
+DO NOT DISTRIBUTE

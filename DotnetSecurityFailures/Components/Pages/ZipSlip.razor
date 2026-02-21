@@ -1,0 +1,233 @@
+@page "/vulnerabilities/zip-slip"
+@rendermode InteractiveServer
+@using System.Net.Http.Headers
+@using DotnetSecurityFailures.Services
+@inject HttpClient HttpClient
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Zip Slip - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="zip-slip" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Archive Extraction System:</h6>
+        <p class="small text-muted">Upload and extract ZIP archives</p>
+
+        <div class="mb-3">
+            <label class="form-label">Select ZIP file:</label>
+            <InputFile class="form-control" OnChange="HandleFileSelection" accept=".zip" />
+            <small class="text-muted">
+                Try uploading <code>ZipSlip_Sample.zip</code> from the project root folder
+            </small>
+        </div>
+
+        <button class="btn btn-primary" @onclick="ExtractArchive" disabled="@(selectedFile == null || isUploading)">
+            @(isUploading ? "Extracting..." : "Extract Archive")
+        </button>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(targetDirectory))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Target Directory:</strong>
+                <pre class="mb-0 mt-2 small">@targetDirectory</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Test the vulnerability:</strong>
+            <ul class="mb-0">
+                <li>Upload a safe ZIP file with normal filenames</li>
+                <li>Upload <code>ZipSlip_Sample.zip</code> containing <code>../../Temp/evil.txt</code></li>
+                <li>Observe how path traversal sequences escape the extraction directory</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Zip Slip</strong> is a path traversal vulnerability in archive extraction. 
+            Malicious archives contain entries with <code>../</code> sequences in filenames, 
+            allowing files to be written outside the intended extraction directory.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application extracts ZIP to target directory
+2. Attacker creates ZIP with malicious entry: "../../Windows/System32/evil.dll"
+3. Path resolves outside target directory
+4. File written to system directory!
+
+Result: Remote code execution, system compromise!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Remote Code Execution</strong> - overwrite executables, DLLs</li>
+            <li><strong>Configuration tampering</strong> - modify config files</li>
+            <li><strong>Backdoors</strong> - overwrite SSH keys</li>
+            <li><strong>Privilege escalation</strong> - overwrite system files</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Zip Slip:</h5>
+        <ol>
+            <li><strong>Validate extraction paths</strong> - Check fullPath.StartsWith(targetDir)</li>
+            <li><strong>Whitelist extraction paths</strong> - Only allow specific subdirectories</li>
+            <li><strong>Extract to isolated directory</strong> - Use temp directory with restricted permissions</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Validate extraction paths
+[HttpPost("api/zip/extract")]
+public IActionResult ExtractZipSafely(IFormFile zipFile)
+{
+    var extractPath = Path.Combine(Path.GetTempPath(), "Extracted");
+    var fullExtractPath = Path.GetFullPath(extractPath);
+
+    using (var archive = ZipFile.OpenRead(zipFile.FileName))
+    {
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+
+            var destinationPath = Path.Combine(extractPath, entry.FullName);
+            var fullDestinationPath = Path.GetFullPath(destinationPath);
+
+            // Validate: ensure path stays within target
+            if (!fullDestinationPath.StartsWith(
+                fullExtractPath + Path.DirectorySeparatorChar))
+            {
+                throw new InvalidOperationException("Zip Slip detected!");
+            }
+
+            entry.ExtractToFile(fullDestinationPath, overwrite: false);
+        }
+    }
+
+    return Ok("Archive extracted safely");
+}
+""";
+    private const string VulnerableCode = """
+// VULNERABLE: No path validation
+[HttpPost("api/zip/extract")]
+public IActionResult ExtractZip(IFormFile zipFile)
+{
+    var extractPath = Path.Combine(Path.GetTempPath(), "Extracted");
+
+    using (var archive = ZipFile.OpenRead(zipFile.FileName))
+    {
+        foreach (var entry in archive.Entries)
+        {
+            // VULNERABLE: No validation!
+            var destinationPath = Path.Combine(extractPath, entry.FullName);
+            entry.ExtractToFile(destinationPath);
+        }
+    }
+
+    return Ok("Archive extracted");
+}
+""";
+    private IBrowserFile? selectedFile;
+    private string result = "";
+    private string targetDirectory = "";
+    private string resultCssClass = "";
+    private bool isUploading = false;
+    private List<ExtractedFileInfo> extractedFiles = new();
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("zip-slip")
+            ?? throw new InvalidOperationException($"Vulnerability not found: zip-slip");
+    }
+
+    private void HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        result = "";
+        targetDirectory = "";
+        resultCssClass = "";
+        extractedFiles.Clear();
+    }
+
+    private async Task ExtractArchive()
+    {
+        if (selectedFile == null) return;
+
+        result = "";
+        targetDirectory = "";
+        resultCssClass = "";
+        extractedFiles.Clear();
+        isUploading = true;
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            using var fileStream = selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var streamContent = new StreamContent(fileStream);
+            
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+            content.Add(streamContent, "zipFile", selectedFile.Name);
+
+            var response = await HttpClient.PostAsync("/api/zip/extract", content);
+            var responseData = await response.Content.ReadFromJsonAsync<ExtractionResponse>();
+
+            if (responseData?.Success == true)
+            {
+                targetDirectory = responseData.TargetDirectory;
+                extractedFiles = responseData.ExtractedFiles;
+
+                if (responseData.HasTraversal)
+                {
+                    resultCssClass = "alert alert-danger";
+                    result = "ZIP SLIP VULNERABILITY DETECTED!\n\n" +
+                            string.Join("\n", responseData.Warnings) +
+                            "\n\nFiles were written outside the target directory!";
+                }
+                else
+                {
+                    resultCssClass = "alert alert-success";
+                    result = $"Archive extracted successfully: {selectedFile.Name}";
+                }
+            }
+            else
+            {
+                resultCssClass = "alert alert-warning";
+                result = $"Extraction failed: {responseData?.Message ?? "Unknown error"}";
+            }
+        }
+        catch (Exception ex)
+        {
+            resultCssClass = "alert alert-warning";
+            result = $"Request failed: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private class ExtractionResponse
+    {
+        public bool Success { get; set; }
+        public string TargetDirectory { get; set; } = "";
+        public List<ExtractedFileInfo> ExtractedFiles { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+        public bool HasTraversal { get; set; }
+        public string Message { get; set; } = "";
+    }
+
+    private class ExtractedFileInfo
+    {
+        public string EntryName { get; set; } = "";
+        public string ResolvedPath { get; set; } = "";
+        public bool IsTraversal { get; set; }
+        public bool WasExtracted { get; set; }
+    }
+}

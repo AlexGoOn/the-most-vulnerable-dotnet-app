@@ -1,0 +1,262 @@
+@page "/vulnerabilities/excessive-data-exposure"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject HttpClient HttpClient
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Excessive Data Exposure - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="excessive-data-exposure" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>User Profile Viewer:</h6>
+        <p class="small text-muted">Fetch user profiles via API endpoint</p>
+
+        <div class="mb-3">
+            <label class="form-label">User ID:</label>
+            <input type="number" class="form-control" @bind="userId" placeholder="Enter user ID (1-3)" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="FetchUserProfile">
+            Fetch Profile
+        </button>
+
+        @if (!string.IsNullOrEmpty(displayedData)) {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>Displayed in UI (what user sees):</strong>
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0">@displayedData</pre>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(apiResponse)) {
+            <div class="alert alert-danger mt-3">
+                <strong>Full API Response (visible in DevTools):</strong>
+                <pre class="mb-0 mt-2" style="max-height: 300px; overflow-y: auto; font-size: 0.85rem;">@apiResponse</pre>
+            </div>
+        }
+
+
+        <div class="alert alert-dark mt-3">
+            <strong>How to verify the vulnerability:</strong>
+            <ol class="mb-0 small">
+                <li>Click "Fetch Profile" above</li>
+                <li>Open browser DevTools (F12) ? Network tab</li>
+                <li>Click on the <code>/api/vulnerabilities/excessive-data-exposure/user/{userId}</code> request</li>
+                <li>View the Response - you'll see sensitive fields!</li>
+            </ol>
+        </div>
+
+        <div class="alert alert-info mt-3">
+            <strong>Try these User IDs:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick='() => SetUserId(1)'>1</code> - Regular user</li>
+                <li><code style="cursor: pointer;" @onclick='() => SetUserId(2)'>2</code> - Admin user</li>
+                <li><code style="cursor: pointer;" @onclick='() => SetUserId(3)'>3</code> - Another user</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Excessive data exposure</strong> occurs when APIs return entire database objects
+            instead of filtering to only necessary fields. Developers rely on client-side filtering,
+            exposing sensitive data that's never displayed in the UI.
+        </p>
+
+        <h6 class="mt-3">The Problem:</h6>
+        <ul>
+            <li>API returns full entity from database (SELECT *)</li>
+            <li>UI only displays username and profile picture</li>
+            <li>But response includes passwords, tokens, admin flags</li>
+            <li>Attacker inspects network traffic and extracts everything</li>
+        </ul>
+
+        <h6 class="mt-3">Common Scenarios:</h6>
+        <ul>
+            <li><strong>User endpoints:</strong> Expose password hashes and salts</li>
+            <li><strong>List endpoints:</strong> Include admin-only fields for all items</li>
+            <li><strong>ORM over-fetching:</strong> Entity Framework returns all columns</li>
+            <li><strong>Mobile APIs:</strong> Send data for features not in app version</li>
+        </ul>
+
+        <h6 class="mt-3">Real-World Impact:</h6>
+        <ul>
+            <li><strong>2018 - USPS:</strong> API exposed 60M user addresses</li>
+            <li><strong>2019 - Facebook:</strong> 540M records leaked via API</li>
+            <li><strong>2020 - LinkedIn:</strong> 500M profiles scraped</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Excessive Data Exposure:</h5>
+        <ol>
+            <li>
+                <strong>Use DTOs (Data Transfer Objects)</strong> - map to DTOs with only required fields
+            </li>
+            <li>
+                <strong>Explicit Field Selection</strong> - project to required fields in queries
+            </li>
+            <li>
+                <strong>JSON Serialization Control</strong> - prevent accidental exposure with attributes
+            </li>
+            <li>
+                <strong>API Documentation</strong> - specify exact response schema
+            </li>
+            <li>
+                <strong>Role-Based Responses</strong> - return different DTOs for different roles
+            </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// SAFE - Use DTOs with explicit field selection
+public class UserPublicDto
+{
+    public int Id { get; set; }
+    public string Username { get; set; }
+    public string ProfilePictureUrl { get; set; }
+    // Only public fields - no sensitive data
+}
+
+[ApiController]
+[Route("api]
+public class SecureDataExposureController : ControllerBase
+{
+    private readonly AppDbContext _context;
+
+    [HttpGet("users/{id}]
+    public async Task<ActionResult<UserPublicDto>> GetUser(int id)
+    {
+        // SAFE: Project to DTO with only needed fields
+        var user = await _context.Users
+            .Where(u => u.Id == id)
+            .Select(u => new UserPublicDto
+            {
+                Id = u.Id,
+                Username = u.Username,
+                ProfilePictureUrl = u.ProfilePictureUrl
+                // PasswordHash NOT included
+                // PasswordSalt NOT included
+                // TwoFactorSecret NOT included
+                // IsAdmin NOT included
+            })
+            .FirstOrDefaultAsync();
+
+        if (user == null)
+            return NotFound();
+
+        return Ok(user);
+    }
+}
+""";
+    private const string VulnerableCode = """
+// VULNERABLE - Returns entire entity with all fields
+[ApiController]
+[Route("api]
+public class VulnerableDataExposureController : ControllerBase
+{
+    [HttpGet("users/{id}]
+    public async Task<IActionResult> GetUser(int id)
+    {
+        // DANGEROUS: Fetches all columns from database
+        var user = await _context.Users.FindAsync(id);
+
+        if (user == null)
+            return NotFound();
+
+        // Returns EVERYTHING including sensitive fields
+        return Ok(user);
+    }
+}
+
+// Entity class with sensitive fields
+public class UserEntity
+{
+    public int Id { get; set; }
+    public string Username { get; set; }
+    public string Email { get; set; }
+
+    // All these are exposed in API response!
+    public string PasswordHash { get; set; }
+    public string PasswordSalt { get; set; }
+    public string TwoFactorSecret { get; set; }
+    public string RecoveryEmail { get; set; }
+    public bool IsAdmin { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastLoginAt { get; set; }
+}
+
+// Frontend only displays Username and Email
+// but receives ALL fields in the response!
+""";
+
+    private int userId = 1;
+    private string apiResponse = "";
+    private string displayedData = "";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("excessive-data-exposure")
+            ?? throw new InvalidOperationException($"Vulnerability not found: excessive-data-exposure");
+    }
+
+    private async Task FetchUserProfile() {
+        apiResponse = "";
+        displayedData = "";
+
+        var response = await HttpClient.GetAsync($"/api/vulnerabilities/excessive-data-exposure/user/{userId}");
+
+        var json = await response.Content.ReadAsStringAsync();
+        var user = System.Text.Json.JsonSerializer.Deserialize<UserResponse>(json,
+            new System.Text.Json.JsonSerializerOptions {
+                PropertyNameCaseInsensitive = true
+            });
+
+        if (user != null) {
+            // What the UI displays (minimal data)
+            displayedData = $"""
+Username: {user.Username}
+Email: {user.Email}
+""";
+
+            // Full API response (visible in DevTools)
+            apiResponse = System.Text.Json.JsonSerializer.Serialize(user,
+                new System.Text.Json.JsonSerializerOptions {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                });
+        }
+    }
+
+    private void SetUserId(int id) {
+        userId = id;
+        apiResponse = "";
+        displayedData = "";
+    }
+
+    private class UserResponse {
+        public int Id { get; set; }
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string PasswordHash { get; set; } = "";
+        public string PasswordSalt { get; set; } = "";
+        public string TwoFactorSecret { get; set; } = "";
+        public string RecoveryEmail { get; set; } = "";
+        public bool IsAdmin { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime LastLoginAt { get; set; }
+
+        // Additional fields from API
+        public string Password { get; set; } = "";
+        public string ApiKey { get; set; } = "";
+        public string Ssn { get; set; } = "";
+        public string CreditCard { get; set; } = "";
+        public int Salary { get; set; }
+        public string Role { get; set; } = "";
+        public string InternalNotes { get; set; } = "";
+        public string LastLoginIp { get; set; } = "";
+    }
+}

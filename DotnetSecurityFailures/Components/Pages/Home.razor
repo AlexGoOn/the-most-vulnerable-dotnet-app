@@ -1,0 +1,255 @@
+@page "/"
+@using DotnetSecurityFailures.Models
+@inject DotnetSecurityFailures.Services.VulnerabilityService VulnerabilityService
+@rendermode InteractiveServer
+
+<PageTitle>.NET Security Vulnerabilities - Educational Application</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-danger" role="alert">
+                <h4 class="alert-heading">WARNING!</h4>
+                <p>This educational application contains <strong>intentionally vulnerable code</strong> to demonstrate security issues in .NET.</p>
+                <hr>
+                <p class="mb-0"><strong>DO NOT USE</strong> this code in production! All examples show what NOT to do.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="display-4">The Most Vulnerable .NET App</h1>
+            <p class="lead">Interactive guide to the most common vulnerabilities in .NET applications</p>
+            <p class="text-muted">Each page demonstrates vulnerable code and shows how to fix the issue</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h2 class="display-4">@GetAll().Count</h2>
+                    <p class="card-text">Total Vulnerabilities</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-danger severity-card @(selectedSeverity == SeverityLevel.Critical ? "bg-danger text-white" : "")" 
+                 @onclick="ToggleCritical">
+                <div class="card-body">
+                    <h2 class="display-4 @(selectedSeverity == SeverityLevel.Critical ? "text-white" : "text-danger")">@GetCriticalCount()</h2>
+                    <p class="card-text">Critical</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-warning severity-card @(selectedSeverity == SeverityLevel.High ? "bg-warning text-dark" : "")" 
+                 @onclick="ToggleHigh">
+                <div class="card-body">
+                    <h2 class="display-4 @(selectedSeverity == SeverityLevel.High ? "text-dark" : "text-warning")">@GetHighCount()</h2>
+                    <p class="card-text">High</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-info severity-card @(selectedSeverity == SeverityLevel.Medium ? "bg-info text-white" : "")" 
+                 @onclick="ToggleMedium">
+                <div class="card-body">
+                    <h2 class="display-4 @(selectedSeverity == SeverityLevel.Medium ? "text-white" : "text-info")">@GetMediumCount()</h2>
+                    <p class="card-text">Medium</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="input-group">
+                <span class="input-group-text">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text" 
+                       class="form-control form-control-lg" 
+                       placeholder="Search vulnerabilities by title, description, CWE ID..." 
+                       @bind="searchText" 
+                       @bind:event="oninput" />
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(searchText) || selectedSeverity != null)
+    {
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="alert alert-info d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Filtered Results:</strong> Showing @GetFilteredVulnerabilities().Count of @GetAll().Count vulnerabilities
+                        @if (!string.IsNullOrWhiteSpace(searchText))
+                        {
+                            <span> matching "@searchText"</span>
+                        }
+                        @if (selectedSeverity != null)
+                        {
+                            <span> with <strong>@selectedSeverity</strong> severity</span>
+                        }
+                    </div>
+                    <button class="btn btn-outline-secondary" type="button" @onclick="ClearFilters">
+                        Clear Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="row">
+        @foreach (var category in Enum.GetValues<VulnerabilityCategory>())
+        {
+            var vulns = GetFilteredByCategory(category);
+            if (vulns.Count == 0) continue;
+
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h3 class="mb-0">
+                            @category.GetDisplayName() 
+                            <span class="badge bg-light text-dark float-end">@vulns.Count</span>
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            @foreach (var vuln in vulns)
+                            {
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card h-100 shadow-sm hover-card">
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <span class="badge bg-@vuln.GetSeverityColor()">
+                                                    @vuln.Severity
+                                                </span>
+                                            </div>
+                                            <h5 class="card-title">@vuln.Title</h5>
+                                            <p class="card-text text-muted small">@vuln.ShortDescription</p>
+                                            @if (!string.IsNullOrEmpty(vuln.CweId))
+                                            {
+                                                <p class="mb-1"><small class="text-muted">@vuln.CweId</small></p>
+                                            }
+                                        </div>
+                                        <div class="card-footer bg-transparent">
+                                            <a href="@vuln.PageUrl" class="btn btn-sm btn-outline-primary w-100">
+                                                View Example
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .hover-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .hover-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+    }
+    
+    .severity-card {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .severity-card:hover {
+        background-color: rgba(248, 249, 250, 0.5);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .severity-card.bg-danger:hover,
+    .severity-card.bg-warning:hover,
+    .severity-card.bg-info:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        opacity: 0.95;
+    }
+</style>
+
+@code {
+    private string searchText = string.Empty;
+    private SeverityLevel? selectedSeverity = null;
+
+    private List<Vulnerability> GetAll() => VulnerabilityService.GetAll();
+    
+    private List<Vulnerability> GetByCategory(VulnerabilityCategory category) 
+        => VulnerabilityService.GetByCategory(category);
+    
+    private int GetCriticalCount() => GetAll().Count(v => v.Severity == SeverityLevel.Critical);
+    private int GetHighCount() => GetAll().Count(v => v.Severity == SeverityLevel.High);
+    private int GetMediumCount() => GetAll().Count(v => v.Severity == SeverityLevel.Medium);
+
+    private void ToggleCritical() => ToggleSeverityFilter(SeverityLevel.Critical);
+    private void ToggleHigh() => ToggleSeverityFilter(SeverityLevel.High);
+    private void ToggleMedium() => ToggleSeverityFilter(SeverityLevel.Medium);
+
+    private void ToggleSeverityFilter(SeverityLevel severity)
+    {
+        Console.WriteLine($"ToggleSeverityFilter called with {severity}");
+        if (selectedSeverity == severity)
+        {
+            selectedSeverity = null;
+        }
+        else
+        {
+            selectedSeverity = severity;
+        }
+        Console.WriteLine($"selectedSeverity is now {selectedSeverity}");
+        StateHasChanged();
+    }
+
+    private void ClearFilters()
+    {
+        searchText = string.Empty;
+        selectedSeverity = null;
+        StateHasChanged();
+    }
+
+    private List<Vulnerability> GetFilteredVulnerabilities()
+    {
+        var vulnerabilities = GetAll();
+
+        // Apply severity filter
+        if (selectedSeverity != null)
+        {
+            vulnerabilities = vulnerabilities.Where(v => v.Severity == selectedSeverity.Value).ToList();
+        }
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            var search = searchText.ToLower();
+            vulnerabilities = vulnerabilities.Where(v =>
+                v.Title.ToLower().Contains(search) ||
+                v.ShortDescription.ToLower().Contains(search) ||
+                (v.CweId != null && v.CweId.ToLower().Contains(search)) ||
+                v.Id.ToString().Contains(search)
+            ).ToList();
+        }
+
+        return vulnerabilities;
+    }
+
+    private List<Vulnerability> GetFilteredByCategory(VulnerabilityCategory category)
+    {
+        return GetFilteredVulnerabilities()
+                   .Where(v => v.Category == category)
+                   .OrderByDescending(v => v.Severity)
+                   .ThenBy(v => v.Title)
+                   .ToList();
+    }
+}

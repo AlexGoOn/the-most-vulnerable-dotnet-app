@@ -1,0 +1,313 @@
+@page "/vulnerabilities/xss-js-interop"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject IJSRuntime JS
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XSS With JS Interop - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xss-js-interop" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>1. XSS via JS eval():</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" 
+                   class="form-control" 
+                   @bind="evalInput" 
+                   placeholder="Enter expression" />
+            <button class="btn btn-primary" @onclick="ExecuteEval">Execute</button>
+        </div>
+
+        <h6 class="mt-4">2. XSS via innerHTML:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" 
+                   class="form-control" 
+                   @bind="innerHtmlInput" 
+                   placeholder="Enter HTML content" />
+            <button class="btn btn-primary" @onclick="RenderInnerHtml">Render</button>
+        </div>
+        
+        <div id="innerHtmlOutput" class="alert alert-secondary" style="min-height:50px;"></div>
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these attacks:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer; color: #0d6efd;" 
+                              @onclick="() => SetInput(attack.Input2?.ToString(), attack.GetInputAsString())">
+                            @attack.Input
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            DOM-based XSS via JavaScript Interop occurs when Blazor code invokes JavaScript functions 
+            with user input that gets executed or rendered unsafely in the browser DOM.
+        </p>
+        
+        <h6 class="mt-3">Attack Vector 1: eval() execution</h6>
+        <pre class="bg-light p-2 small"><code>User input: alert('XSS')
+
+Blazor code:
+await JS.InvokeVoidAsync("eval", userInput);
+
+Result: JavaScript code executes directly!</code></pre>
+
+        <h6 class="mt-3">Attack Vector 2: innerHTML assignment</h6>
+        <pre class="bg-light p-2 small"><code>User input: &lt;img src=x onerror=alert('XSS')&gt;
+
+JavaScript function:
+function showContent(html) {
+    document.getElementById('output').innerHTML = html;
+}
+
+Blazor call:
+await JS.InvokeVoidAsync("showContent", userInput);
+
+Result: HTML rendered with XSS payload!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Session hijacking</strong> - steal cookies and session tokens</li>
+            <li><strong>Keylogging</strong> - capture all keyboard input</li>
+            <li><strong>Form data theft</strong> - steal passwords, credit cards</li>
+            <li><strong>Phishing attacks</strong> - display fake login forms</li>
+            <li><strong>Malware distribution</strong> - redirect to malicious sites</li>
+            <li><strong>Account takeover</strong> - perform actions as the victim</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against DOM-based XSS via JS Interop:</h5>
+        <ol>
+            <li>
+                <strong>Never use eval()</strong> - 
+                avoid passing user input to eval(), setTimeout(), setInterval() with strings
+            </li>
+            <li>
+                <strong>Use textContent instead of innerHTML</strong> - 
+                for plain text, always use textContent or innerText
+            </li>
+            <li>
+                <strong>Sanitize HTML</strong> - 
+                use libraries like HtmlSanitizer (Ganss.Xss) or DOMPurify (JavaScript)
+            </li>
+            <li>
+                <strong>Validate JS interop parameters</strong> - 
+                sanitize all data before passing to JavaScript functions
+            </li>
+            <li>
+                <strong>Prefer Blazor rendering</strong> - 
+                let Blazor handle HTML encoding automatically whenever possible
+            </li>
+            <li>
+                <strong>Content Security Policy</strong> - 
+                implement CSP headers to block inline scripts
+            </li>
+            <li>
+                <strong>Use safe DOM APIs</strong> - 
+                createElement(), setAttribute(), appendChild() are safer than innerHTML
+            </li>
+            <li>
+                <strong>Audit JS interop calls</strong> - 
+                review all IJSRuntime.InvokeAsync calls for security risks
+            </li>
+        </ol>
+
+        <div class="alert alert-warning mt-3">
+            <strong>For HTML sanitization:</strong>
+            <pre class="mb-0"><code>// Install package
+dotnet add package Ganss.Xss
+
+// Use in code
+using Ganss.Xss;
+
+var sanitizer = new HtmlSanitizer();
+string safeHtml = sanitizer.Sanitize(userInput);
+await JS.InvokeVoidAsync("eval", 
+    "document.getElementById('output').innerHTML = '" + safeHtml + "'");</code></pre>
+        </div>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// SAFE 1: Never use eval() with user input
+
+// If you need to evaluate expressions, use a safe parser
+
+// Example: NCalc library for math expressions
+
+var expression = new Expression(userInput);
+
+var result = expression.Evaluate();
+
+
+
+// SAFE 2: Use textContent instead of innerHTML
+
+await JS.InvokeVoidAsync(\"eval\",
+
+    \"document.getElementById('output').textContent = '\" + userInput + \"'\;
+
+// Result: HTML is escaped, no XSS possible
+
+
+
+// SAFE 3: Sanitize HTML before rendering
+
+// Install: Ganss.Xss NuGet package
+
+using Ganss.Xss;
+
+
+
+var sanitizer = new HtmlSanitizer();
+
+string safeHtml = sanitizer.Sanitize(userInput);
+
+await JS.InvokeVoidAsync(\"eval\",
+
+    \"document.getElementById('output').innerHTML = '\" + safeHtml + \"'\;
+
+
+
+// SAFE 4: Use Blazor's built-in rendering
+
+// Let Blazor handle HTML encoding automatically
+
+<div>@@userInput</div>
+
+// Result: Automatically HTML-encoded, safe!
+""";
+    private const string VulnerableCode = """
+// VULNERABLE 1: Direct eval() call
+
+@@inject IJSRuntime JS
+
+
+
+await JS.InvokeVoidAsync(\"eval\", userInput);
+
+// Attack: alert('XSS')
+
+// Result: Code executes immediately!
+
+
+
+// VULNERABLE 2: innerHTML via JS function
+
+// Using base64 encoding to pass HTML to eval
+
+var base64Html = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(userInput));
+
+await JS.InvokeVoidAsync(\"eval\",
+
+    $\"document.getElementById('output').innerHTML = atob('{base64Html}')\;
+
+// Attack: <img src=x onerror=alert('XSS')>
+
+// Result: Image error triggers XSS!
+""";
+    private Vulnerability? vulnerability;
+    private string evalInput = "";
+    private string innerHtmlInput = "";
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xss-js-interop")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xss-js-interop");
+    }
+
+    private async Task ExecuteEval()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(evalInput))
+        {
+            attackAnalysis = "Please enter an expression";
+            return;
+        }
+
+        try
+        {
+            // VULNERABLE: Direct eval call with user input
+            await JS.InvokeVoidAsync("eval", evalInput);
+
+            var predefinedAttack = vulnerability!.PredefinedAttacks
+                .FirstOrDefault(a => a.Input2 == "eval" && a.Input == evalInput);
+            
+            attackAnalysis = predefinedAttack?.Description ?? 
+                            "Custom expression executed via eval(). Any JavaScript code will run directly.";
+        }
+        catch (Exception ex)
+        {
+            attackAnalysis = $"Execution error: {ex.Message}";
+        }
+    }
+
+    private async Task RenderInnerHtml()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(innerHtmlInput))
+        {
+            attackAnalysis = "Please enter HTML content";
+            return;
+        }
+
+        try
+        {
+            // VULNERABLE: innerHTML assignment via inline JS using base64 encoding
+            var base64Html = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(innerHtmlInput));
+            await JS.InvokeVoidAsync("eval", 
+                $"document.getElementById('innerHtmlOutput').innerHTML = atob('{base64Html}')");
+
+            var predefinedAttack = vulnerability!.PredefinedAttacks
+                .FirstOrDefault(a => a.Input2 == "innerHTML" && a.Input == innerHtmlInput);
+            
+            attackAnalysis = predefinedAttack?.Description ?? 
+                            "Custom HTML rendered via innerHTML. Check the output area above.";
+        }
+        catch (Exception ex)
+        {
+            attackAnalysis = $"Rendering error: {ex.Message}";
+        }
+    }
+
+    private void SetInput(string? vulnerabilityType, string input)
+    {
+        ClearResults();
+        
+        switch (vulnerabilityType)
+        {
+            case "eval":
+                evalInput = input;
+                break;
+            case "innerHTML":
+                innerHtmlInput = input;
+                break;
+        }
+    }
+
+    private void ClearResults()
+    {
+        attackAnalysis = null;
+    }
+}

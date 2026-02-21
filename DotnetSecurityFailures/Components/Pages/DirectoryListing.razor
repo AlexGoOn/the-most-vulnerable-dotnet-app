@@ -1,0 +1,219 @@
+@page "/vulnerabilities/directory-listing"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject NavigationManager NavigationManager
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Directory Listing - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="directory-listing" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Browse Server Directories:</h6>
+        <p class="small text-muted">Test directory listing vulnerability - click links to see real directory listings!</p>
+
+        <div class="mb-3">
+            <label class="form-label">Directory Path</label>
+            <div class="input-group">
+                <span class="input-group-text">@GetBaseUrl()</span>
+                <input type="text" class="form-control" @bind="directoryPath" 
+                       placeholder="uploads/" />
+            </div>
+        </div>
+
+        <button class="btn btn-primary w-100" @onclick="BrowseDirectory">
+            Browse Directory
+        </button>
+        
+        @if (showDirectoryUrl)
+        {
+            <div class="card mt-3 border-warning">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <small>Directory browsing enabled: /@directoryPath</small>
+                    <a href="@currentDirectoryUrl" target="_blank" class="btn btn-sm btn-warning">
+                        Open in New Tab →
+                    </a>
+                </div>
+            </div>
+
+            <div class="alert alert-warning mt-3">
+                <strong>VULNERABILITY EXPLOITED!</strong><br/>
+                Directory listing is enabled! Attackers can:<br/>
+                • See all files and folders<br/>
+                • Download sensitive documents<br/>
+                • Access logs with sensitive information<br/>
+                • Download user uploaded files<br/>
+                • View .env files with credentials
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these paths (click to browse):</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => TestPath("uploads"))">uploads/</code> - User uploaded files (contains sensitive user data!)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => TestPath("logs"))">logs/</code> - Application logs (contains passwords and API keys!)</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            The web server is configured to show directory listings when no index file (index.html, 
+            default.aspx) is present. This exposes the file structure and allows attackers to discover 
+            and download sensitive files.
+        </p>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Information Disclosure:</strong> Reveals application structure and files</li>
+            <li><strong>Sensitive File Access:</strong> Logs and user files exposed</li>
+            <li><strong>Source Code Leak:</strong> May expose configuration files</li>
+            <li><strong>Credential Discovery:</strong> Connection strings, API keys in log files</li>
+            <li><strong>Attack Surface Mapping:</strong> Helps identify vulnerable components</li>
+            <li><strong>Data Breach:</strong> Access to user uploads and documents</li>
+        </ul>
+
+        <h6 class="mt-3">Common Exposed Directories:</h6>
+        <ul>
+            <li><code>/uploads/</code> - User files</li>
+            <li><code>/logs/</code> - Application logs</li>
+            <li><code>/temp/</code> - Temporary files</li>
+            <li><code>/.git/</code> - Git repository</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Directory Listing:</h5>
+        <ol>
+            <li><strong>Disable Directory Browsing</strong> - Never use AddDirectoryBrowser() or UseDirectoryBrowser()</li>
+            <li><strong>Hide Sensitive Folders</strong> - Use requestFiltering to hide .git, logs folders</li>
+            <li><strong>Authentication Required</strong> - Require login for file downloads</li>
+            <li><strong>Outside Web Root</strong> - Store sensitive files outside wwwroot</li>
+            <li><strong>Custom Error Pages</strong> - Return 404 for unauthorized directory access</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Directory browsing disabled
+
+// Program.cs - Secure configuration
+// DON'T add: builder.Services.AddDirectoryBrowser();
+// DON'T add: app.UseDirectoryBrowser();
+
+// Serve static files WITHOUT directory browsing
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(env.WebRootPath, \"public\),
+    RequestPath = \"/public\",
+    ServeUnknownFileTypes = false
+});
+
+// IIS web.config
+<configuration>
+  <system.webServer>
+    <directoryBrowse enabled=\"false\" />
+    
+    <security>
+      <requestFiltering>
+        <hiddenSegments>
+          <add segment=\".git\" />
+          <add segment=\".env\" />
+          <add segment=\"logs\" />
+        </hiddenSegments>
+        <fileExtensions>
+          <add fileExtension=\".config\" allowed=\"false\" />
+          <add fileExtension=\".cs\" allowed=\"false\" />
+          <add fileExtension=\".log\" allowed=\"false\" />
+          <add fileExtension=\".json\" allowed=\"false\" />
+        </fileExtensions>
+      </requestFiltering>
+    </security>
+  </system.webServer>
+</configuration>
+
+// Serve files through controller with authorization
+[Authorize]
+public IActionResult DownloadFile(string filename)
+{
+    // Validate filename
+    if (!IsValidFilename(filename))
+        return BadRequest();
+    
+    // Check user permissions
+    if (!CanAccessFile(filename, User.Identity.Name))
+        return Forbid();
+    
+    var path = GetSecureFilePath(filename);
+    return PhysicalFile(path, \"application/octet-stream\;
+}
+
+// Store sensitive files OUTSIDE web root
+// Good: C:\\AppData\\uploads\\
+// Bad:  C:\\wwwroot\\uploads\\
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Directory browsing enabled
+
+// Program.cs - ASP.NET Core
+builder.Services.AddDirectoryBrowser();
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(env.WebRootPath, \"uploads\),
+    RequestPath = \"/uploads\"
+});
+app.UseDirectoryBrowser(new DirectoryBrowserOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(env.WebRootPath, \"uploads\),
+    RequestPath = \"/uploads\"
+});
+
+// IIS web.config
+<configuration>
+  <system.webServer>
+    <directoryBrowse enabled=\"true\" />
+    <!-- Allows listing all files! -->
+  </system.webServer>
+</configuration>
+
+// File structure exposed:
+// /uploads/
+//   ├── user_data.txt (SSN, Credit Cards)
+//   ├── confidential_report.txt
+//   ├── .env.production (API Keys)
+// /logs/
+//   ├── application.log (Passwords)
+//   ├── error.log (Connection Strings)
+""";
+
+    private string directoryPath = "uploads";
+    private bool showDirectoryUrl = false;
+    private string currentDirectoryUrl = "";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("directory-listing")
+            ?? throw new InvalidOperationException($"Vulnerability not found: directory-listing");
+    }
+
+    private void BrowseDirectory()
+    {
+        showDirectoryUrl = true;
+        var path = directoryPath.TrimEnd('/');
+        currentDirectoryUrl = $"{GetBaseUrl()}{path}/";
+    }
+
+    private void TestPath(string path)
+    {
+        directoryPath = path;
+        BrowseDirectory();
+    }
+
+    private string GetBaseUrl()
+    {
+        var uri = new Uri(NavigationManager.Uri);
+        return $"{uri.Scheme}://{uri.Authority}/";
+    }
+}

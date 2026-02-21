@@ -1,0 +1,267 @@
+@page "/vulnerabilities/verbose-errors"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject HttpClient Http
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Verbose Error Messages - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="verbose-errors" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Test Error Handling:</h6>
+        <p class="small textMuted">Compare verbose vs generic errors</p>
+
+        <div class="mb-3">
+            <label class="form-label">Select Error Type</label>
+            <select class="form-select" @bind="selectedError">
+                <option value="database">Database Connection Error</option>
+                <option value="exception">Unhandled Exception</option>
+            </select>
+        </div>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" @bind="showVerboseErrors" id="verboseCheck">
+            <label class="form-check-label" for="verboseCheck">
+                <strong class="text-danger">Show Detailed Errors</strong>
+                <small class="d-block text-muted">(Debug mode enabled)</small>
+            </label>
+        </div>
+
+        <button class="btn btn-danger w-100" @onclick="TriggerError" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span class="spinner-border spinner-border-sm me-2"></span>
+            }
+            Trigger Error
+        </button>
+        
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger mt-3" style="white-space: pre-wrap; font-family: monospace; max-height: 400px; overflow-y: auto;">
+                @((MarkupString)errorMessage)
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            The application displays detailed error messages including stack traces, file paths, 
+            SQL queries, and internal system details to end users. This information helps attackers 
+            understand the application's structure and find vulnerabilities.
+        </p>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li><strong>Information Disclosure:</strong> Reveals internal structure and technologies</li>
+            <li><strong>Path Disclosure:</strong> Exposes server file system paths</li>
+            <li><strong>Database Schema Leak:</strong> Shows table names and column structures</li>
+            <li><strong>Version Information:</strong> Reveals framework and library versions</li>
+            <li><strong>Attack Surface:</strong> Helps attackers identify vulnerable components</li>
+            <li><strong>Business Logic Exposure:</strong> Reveals internal processes</li>
+        </ul>
+
+        <h6 class="mt-3">What Attackers Learn:</h6>
+        <ul>
+            <li>Framework and version (.NET 10, Entity Framework)</li>
+            <li>Database type and version (SQL Server 2019)</li>
+            <li>Server file paths (C:\inetpub\wwwroot\...)</li>
+            <li>Database schema (table/column names)</li>
+            <li>Third-party libraries used</li>
+            <li>Business logic and validation rules</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Verbose Error Messages:</h5>
+        <ol>
+            <li><strong>Generic User Messages</strong> - Show "An error occurred" instead of details</li>
+            <li><strong>Error Reference IDs</strong> - Provide unique ID to correlate with logs</li>
+            <li><strong>Log Detailed Errors</strong> - Store full details server-side for debugging</li>
+            <li><strong>Custom Error Pages</strong> - Create user-friendly error pages</li>
+            <li><strong>Handle Specific Exceptions</strong> - Catch and handle expected errors gracefully</li>
+            <li><strong>Environment-Specific Behavior</strong> - Different handling for dev vs production</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Generic errors to users, detailed logs
+[ApiController]
+[Route("api/errors]
+public class SafeErrorController : ControllerBase
+{
+    private readonly ILogger<SafeErrorController> _logger;
+    
+    [HttpGet("database]
+    public IActionResult TriggerDatabaseError([FromQuery] bool showVerbose = false)
+    {
+        try
+        {
+            // Database operation...
+            return Ok();
+        }
+        catch (SqlException ex)
+        {
+            // Generate unique error ID for tracking
+            var errorId = Guid.NewGuid().ToString("N[..8];
+            
+            // Log detailed error server-side
+            _logger.LogError(ex, 
+                "Database error occurred. ErrorId: {ErrorId}", 
+                errorId);
+            
+            // Return generic message to user
+            return StatusCode(500, new
+            {
+                error = "Unable to connect to database",
+                message = "Please try again later. If the problem persists, contact support.",
+                errorId  // Only the ID for support reference
+                // NO stack trace, NO server names, NO credentials
+            });
+        }
+    }
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Exposing detailed errors to users
+[ApiController]
+[Route("api/errors]
+public class VulnerableErrorController : ControllerBase
+{
+    [HttpGet("database]
+    public IActionResult TriggerDatabaseError([FromQuery] bool showVerbose = false)
+    {
+        try
+        {
+            var connectionString = "Server=prod-sql-01;Database=ProductionDB;User=sa;Password=...";
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                // Execute query...
+            }
+            return Ok();
+        }
+        catch (SqlException ex)
+        {
+            // VULNERABILITY: Exposing detailed SQL exception
+            if (showVerbose)
+            {
+                return StatusCode(500, new
+                {
+                    error = "Database Error",
+                    type = ex.GetType().FullName,
+                    message = ex.Message,
+                    stackTrace = ex.StackTrace,  // Full stack trace!
+                    server = ex.Server,           // Database server name
+                    procedure = ex.Procedure,     // SQL procedure name
+                    lineNumber = ex.LineNumber,   // Error line number
+                    connectionDetails = new       // Connection info!
+                    {
+                        server = "prod-sql-01.internal.company.com",
+                        database = "ProductionDB",
+                        user = "NT AUTHORITY\\NETWORK SERVICE"
+                    }
+                });
+            }
+            return StatusCode(500, "Error;
+        }
+    }
+}
+""";
+
+    private string selectedError = "database";
+    private bool showVerboseErrors = false;
+    private string? errorMessage;
+    private bool isLoading = false;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("verbose-errors")
+            ?? throw new InvalidOperationException($"Vulnerability not found: verbose-errors");
+    }
+
+    private async Task TriggerError()
+    {
+        errorMessage = null;
+        isLoading = true;
+        
+        try
+        {
+            var endpoint = selectedError switch
+            {
+                "database" => $"/api/errors/database?showVerbose={showVerboseErrors}",
+                "exception" => $"/api/errors/exception?showVerbose={showVerboseErrors}",
+                _ => "/api/errors/exception"
+            };
+
+            var response = await Http.GetAsync(endpoint);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = FormatErrorResponse(response.StatusCode.ToString(), responseBody);
+            }
+            else
+            {
+                errorMessage = "<strong>No error occurred</strong>";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"<strong>Client-side error:</strong><br/>{ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string FormatErrorResponse(string statusCode, string body)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            
+            var formatted = $"<strong style='color: #dc3545;'>HTTP {statusCode}</strong><br/><br/>";
+            
+            foreach (var property in root.EnumerateObject())
+            {
+                formatted += $"<strong style='color: #0d6efd;'>{property.Name}:</strong><br/>";
+                formatted += FormatJsonValue(property.Value, 1) + "<br/><br/>";
+            }
+            
+            return formatted;
+        }
+        catch
+        {
+            return $"<strong>HTTP {statusCode}</strong><br/><br/>{System.Web.HttpUtility.HtmlEncode(body)}";
+        }
+    }
+
+    private string FormatJsonValue(System.Text.Json.JsonElement element, int indent)
+    {
+        var indentStr = new string(' ', indent * 2);
+        
+        return element.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Object => 
+                string.Join("<br/>", element.EnumerateObject().Select(p => 
+                    $"{indentStr}<strong style='color: #6c757d;'>{p.Name}:</strong> {FormatJsonValue(p.Value, indent + 1)}")),
+            System.Text.Json.JsonValueKind.Array => 
+                string.Join("<br/>", element.EnumerateArray().Select(e => 
+                    $"{indentStr}- {FormatJsonValue(e, indent + 1)}")),
+            System.Text.Json.JsonValueKind.String => 
+                System.Web.HttpUtility.HtmlEncode(element.GetString()!).Replace("\n", "<br/>" + indentStr).Replace("\r", ""),
+            System.Text.Json.JsonValueKind.Null => 
+                "<em style='color: #6c757d;'>null</em>",
+            _ => System.Web.HttpUtility.HtmlEncode(element.ToString())
+        };
+    }
+
+    private async Task TestPredefined(bool verbose)
+    {
+        showVerboseErrors = verbose;
+        selectedError = "database";
+        await TriggerError();
+    }
+}

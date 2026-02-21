@@ -1,0 +1,207 @@
+@page "/vulnerabilities/data-in-urls"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Data in URLs - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="data-in-urls" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Password Reset Demo:</h6>
+        <p class="small text-muted">Generate reset links with sensitive data exposed in URLs</p>
+
+        <div class="mb-3">
+            <label class="form-label">Email Address</label>
+            <input type="email" class="form-control" @bind="email" 
+                   placeholder="user@example.com" />
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">New Password</label>
+            <input type="password" class="form-control" @bind="newPassword" 
+                   placeholder="Enter new password" />
+        </div>
+
+        <button class="btn btn-primary w-100" @onclick="GenerateResetLink">
+            Generate Reset Link
+        </button>
+        
+        @if (!string.IsNullOrEmpty(responseData))
+        {
+            <div class="@responseCssClass mt-3">
+                <strong>@responseTitle</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@responseData</pre>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            The application passes sensitive data (passwords, tokens, session IDs) in URL query strings. 
+            URLs are logged extensively across multiple systems and can be easily intercepted or leaked.
+        </p>
+
+        <h6 class="mt-3">Where URLs are logged:</h6>
+        <ul>
+            <li><strong>Browser History:</strong> Sensitive data stored permanently</li>
+            <li><strong>Server Logs:</strong> Full URLs logged in web server access logs</li>
+            <li><strong>Proxy Logs:</strong> Corporate proxies log all URLs</li>
+            <li><strong>Referrer Leakage:</strong> URLs sent in Referer header to external sites</li>
+            <li><strong>Shared Links:</strong> Users may accidentally share sensitive URLs</li>
+        </ul>
+
+        <h6 class="mt-3">Common sensitive data in URLs:</h6>
+        <ul>
+            <li>Passwords and reset tokens</li>
+            <li>Session IDs and auth tokens</li>
+            <li>API keys and secrets</li>
+            <li>Credit card numbers</li>
+            <li>Personal health information</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Sensitive Data in URLs:</h5>
+        <ol>
+            <li><strong>Use POST for Sensitive Data</strong> - Never use GET for passwords, PII, or payment info</li>
+            <li><strong>Headers for Auth</strong> - Pass API keys and tokens in Authorization or custom headers</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+
+    private const string VulnerableCode = """
+// Password reset with token in URL
+[HttpGet("/api/password-reset/reset")]
+public IActionResult ResetPassword(
+    [FromQuery] string email,
+    [FromQuery] string token,
+    [FromQuery] string newPassword)
+{
+    // URL: /api/password-reset/reset?email=user@example.com
+    //      &token=abc123&newPassword=MyPass123
+
+    if (ValidateToken(email, token))
+    {
+        UpdatePassword(email, newPassword);
+        return Ok();
+    }
+    return BadRequest();
+}
+
+// API key in query string
+[HttpGet("/api/data")]
+public IActionResult GetData(
+    [FromQuery] string apiKey)
+{
+    // URL: /api/data?apiKey=sk_live_abc123...
+    // Visible in logs, referer headers, etc.
+
+    if (ValidateApiKey(apiKey))
+        return Ok(GetSensitiveData());
+
+    return Unauthorized();
+}
+""";
+
+    private const string SafeCode = """
+// CORRECT: Use POST with request body for sensitive data
+
+// Password reset - Request reset token
+[HttpPost("/api/password-reset/request")]
+public async Task<IActionResult> RequestReset(
+    [FromBody] ResetRequest request)
+{
+    // Generate secure token
+    var token = GenerateSecureToken();
+    
+    // Store token with expiry (15 minutes)
+    await StoreTokenAsync(request.Email, token);
+    
+    // Safe URL - only opaque token (not password!)
+    var resetUrl = $"{_baseUrl}/reset?token={token}";
+    await SendEmail(request.Email, resetUrl);
+    
+    return Ok();
+}
+
+// API authentication - use headers, not query strings
+[HttpGet("/api/data")]
+public IActionResult GetData(
+    [FromHeader(Name = "X-API-Key")] string apiKey)
+{
+    // Clean URL: /api/data
+    // API key in header (safer than query string)
+    
+    if (ValidateApiKey(apiKey))
+        return Ok(GetSensitiveData());
+    
+    return Unauthorized();
+}
+""";
+
+    private string email = "";
+    private string newPassword = "";
+    private string responseData = "";
+    private string responseTitle = "";
+    private string responseCssClass = "";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("data-in-urls")
+            ?? throw new InvalidOperationException($"Vulnerability not found: data-in-urls");
+    }
+
+    private async Task GenerateResetLink()
+    {
+        responseData = "";
+        responseTitle = "";
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(newPassword))
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Validation Error";
+            responseData = "Please enter both email and password";
+            return;
+        }
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        var response = await httpClient.PostAsJsonAsync("/api/password-reset/generate-link", new
+        {
+            Email = email,
+            NewPassword = newPassword
+        });
+
+        var result = await response.Content.ReadFromJsonAsync<ResetLinkResponse>();
+
+        if (response.IsSuccessStatusCode && result != null)
+        {
+            responseCssClass = "alert alert-danger";
+            responseTitle = "VULNERABILITY - SENSITIVE DATA IN URL!";
+            responseData = $"Reset Link Generated:\n{result.ResetLink}";
+        }
+        else
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Error";
+            responseData = "Failed to generate reset link";
+        }
+    }
+
+    private async Task TestPredefined()
+    {
+        email = "user@example.com";
+        newPassword = "MyNewP@ssw0rd123";
+        await GenerateResetLink();
+    }
+
+    private class ResetLinkResponse
+    {
+        public bool Success { get; set; }
+        public string ResetLink { get; set; } = "";
+        public string[] Exposures { get; set; } = Array.Empty<string>();
+    }
+}

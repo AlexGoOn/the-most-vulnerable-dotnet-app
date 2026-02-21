@@ -1,0 +1,264 @@
+@page "/vulnerabilities/xxe-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XXE (XML External Entity) - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xxe-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>XML User Profile Processor:</h6>
+        <p class="small text-muted">Submit XML with user profile data - try injecting XXE to read server files</p>
+
+        <div class="mb-3">
+            <label class="form-label">XML Document</label>
+            <textarea class="form-control font-monospace" rows="12" @bind="xmlInput" 
+                      placeholder="Enter XML document..."></textarea>
+        </div>
+
+        <button class="btn btn-outline-secondary btn-sm w-100 mb-2" @onclick="LoadXXEPayload">
+            Load XXE File Read Payload
+        </button>
+
+        <button class="btn btn-warning w-100 mb-2" @onclick="ProcessVulnerable">
+            Process XML (Vulnerable)
+        </button>
+
+        <button class="btn btn-success w-100 mb-2" @onclick="ProcessSafe">
+            Process XML (Safe)
+        </button>
+
+        @if (!string.IsNullOrEmpty(responseData))
+        {
+            <div class="@responseCssClass mt-3">
+                <strong>@responseTitle</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@responseData</pre>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            XXE (XML External Entity) attacks exploit XML parsers that allow external entity resolution. 
+            Modern .NET (4.5.2+) is secure by default, but vulnerabilities appear when developers 
+            explicitly enable <code>XmlResolver</code> or use legacy code patterns.
+        </p>
+
+        <h6 class="mt-3">How XXE works:</h6>
+        <ol>
+            <li>Attacker defines DOCTYPE with ENTITY pointing to file/URL</li>
+            <li>References entity in XML content (&amp;xxe;)</li>
+            <li>If XmlResolver is enabled, parser resolves external resource</li>
+            <li>Sensitive data returned in the response</li>
+        </ol>
+
+        <h6 class="mt-3">What attackers can do:</h6>
+        <ul>
+            <li><strong>Read Local Files:</strong> Access configuration files, source code, credentials</li>
+            <li><strong>SSRF:</strong> Make requests to internal systems and cloud metadata endpoints</li>
+            <li><strong>DoS:</strong> Crash parser with billion laughs entity expansion</li>
+            <li><strong>Port Scanning:</strong> Enumerate internal network services</li>
+        </ul>
+
+        <h6 class="mt-3">When XXE vulnerabilities occur:</h6>
+        <ul>
+            <li>Explicitly setting <code>XmlResolver = new XmlUrlResolver()</code></li>
+            <li>Using legacy .NET Framework code (pre-4.5.2)</li>
+            <li>Porting old applications without security review</li>
+            <li>Third-party libraries with insecure XML parsing</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against XXE:</h5>
+        <ol>
+            <li><strong>Use Modern .NET Defaults</strong> - .NET Core, .NET 5+ are secure by default</li>
+            <li><strong>Never Enable XmlResolver</strong> - Avoid explicit XmlResolver assignments</li>
+            <li><strong>In Legacy Applications Use XmlReader with Explicit Settings</strong> - Set DtdProcessing = DtdProcessing.Prohibit</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string VulnerableCode = """
+// DANGEROUS: Enabling XmlResolver allows XXE attacks
+
+[HttpPost("api/xxe/process-user")]
+public IActionResult ProcessUserXml([FromBody] XmlRequest request)
+{
+    var doc = new XmlDocument();
+    doc.XmlResolver = new XmlUrlResolver(); // VULNERABLE
+    doc.LoadXml(request.XmlContent);
+    var name = doc.SelectSingleNode("//user/name")?.InnerText;
+    return Ok(new { Name = name });
+}
+""";
+
+    private const string SafeCode = """
+// CORRECT: Modern .NET is secure by default
+
+[HttpPost("api/xxe/process-safe")]
+public IActionResult ProcessUserXmlSafe([FromBody] XmlRequest request)
+{
+    var doc = new XmlDocument();
+    // XmlResolver is null by default since .NET 4.5.2
+    doc.LoadXml(request.XmlContent);
+    var name = doc.SelectSingleNode("//user/name")?.InnerText;
+    return Ok(new { Name = name });
+}
+""";
+
+    private string xmlInput = @"<?xml version=""1.0""?>
+<user>
+    <name>John Doe</name>
+    <email>john@example.com</email>
+    <bio>Software developer</bio>
+</user>";
+
+    private string responseData = "";
+    private string responseTitle = "";
+    private string responseCssClass = "";
+    private string? secretFilePath;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("xxe-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xxe-injection");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSecretPath();
+    }
+
+    private async Task LoadSecretPath()
+    {
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient();
+            httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+            
+            var response = await httpClient.GetFromJsonAsync<SecretPathResponse>("/api/xxe/secret-path");
+            if (response != null)
+            {
+                secretFilePath = response.FileUrl;
+            }
+        }
+        catch
+        {
+            secretFilePath = "file:///path/to/secrets/database_config.txt";
+        }
+    }
+
+    private async Task ProcessVulnerable()
+    {
+        responseData = "";
+        responseTitle = "";
+
+        if (string.IsNullOrWhiteSpace(xmlInput))
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Validation Error";
+            responseData = "Please enter XML content";
+            return;
+        }
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        var response = await httpClient.PostAsJsonAsync("/api/xxe/process-user", new { XmlContent = xmlInput });
+        var result = await response.Content.ReadFromJsonAsync<XxeResponse>();
+
+        if (response.IsSuccessStatusCode && result != null)
+        {
+            if (result.Warning != null)
+            {
+                responseCssClass = "alert alert-danger";
+                responseTitle = "XXE VULNERABILITY EXPLOITED!";
+                responseData = $"{result.Warning}\n\nThe server read and returned content from a sensitive file!";
+            }
+            else
+            {
+                responseCssClass = "alert alert-success";
+                responseTitle = "XML Processed";
+                responseData = $"Name: {result.ProcessedData?.Name}\nEmail: {result.ProcessedData?.Email}";
+            }
+        }
+        else
+        {
+            responseCssClass = "alert alert-danger";
+            responseTitle = "Processing Error";
+            responseData = result?.Error ?? "Failed to process XML";
+        }
+    }
+
+    private async Task ProcessSafe()
+    {
+        responseData = "";
+        responseTitle = "";
+
+        if (string.IsNullOrWhiteSpace(xmlInput))
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Validation Error";
+            responseData = "Please enter XML content";
+            return;
+        }
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        var response = await httpClient.PostAsJsonAsync("/api/xxe/process-safe", new { XmlContent = xmlInput });
+        var result = await response.Content.ReadFromJsonAsync<XxeResponse>();
+
+        if (response.IsSuccessStatusCode && result != null)
+        {
+            responseCssClass = "alert alert-success";
+            responseTitle = "Safe Processing - XXE Protected";
+            responseData = $"{result.Message}\n\nName: {result.ProcessedData?.Name}";
+        }
+        else
+        {
+            responseCssClass = "alert alert-info";
+            responseTitle = "XXE Attack Blocked";
+            responseData = result?.Error ?? "DTD processing is disabled";
+        }
+    }
+
+    private async Task LoadXXEPayload()
+    {
+        if (secretFilePath == null) await LoadSecretPath();
+
+        xmlInput = $@"<?xml version=""1.0""?>
+<!DOCTYPE user [
+  <!ENTITY xxe SYSTEM ""{secretFilePath}"">
+]>
+<user>
+    <name>&xxe;</name>
+    <email>attacker@evil.com</email>
+</user>";
+        StateHasChanged();
+    }
+
+    private class XxeResponse
+    {
+        public bool Success { get; set; }
+        public string? Message { get; set; }
+        public string? Error { get; set; }
+        public string? Warning { get; set; }
+        public ProcessedData? ProcessedData { get; set; }
+    }
+
+    private class ProcessedData
+    {
+        public string Name { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Bio { get; set; } = "";
+    }
+
+    private class SecretPathResponse
+    {
+        public string SecretFilePath { get; set; } = "";
+        public string FileUrl { get; set; } = "";
+    }
+}

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Internal Admin Panel - CONFIDENTIAL</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 40px 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .admin-panel {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            border-top: 5px solid #dc3545;
+        }
+        .confidential-badge {
+            background: #dc3545;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+        .admin-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            margin: -20px -20px 20px -20px;
+        }
+        .secret-data {
+            background: #f8f9fa;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .credential-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .warning-banner {
+            background: #dc3545;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            animation: blink 2s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .server-info {
+            background: #e7f3ff;
+            border: 1px solid #2196F3;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="warning-banner">
+        ?? INTERNAL USE ONLY - AUTHORIZED PERSONNEL ONLY ??
+    </div>
+
+    <div class="container mt-4">
+        <div class="admin-panel p-4">
+            <div class="admin-header">
+                <h1 class="mb-0">?? Internal Admin Panel</h1>
+                <small>localhost:5003 - Internal Network Only</small>
+            </div>
+
+            <div class="confidential-badge">
+                ?? CONFIDENTIAL - SSRF TARGET
+            </div>
+
+            <div class="alert alert-danger">
+                <strong>?? SSRF Vulnerability Demonstration</strong><br>
+                This page should NEVER be accessible from the public internet!<br>
+                It's only accessible via localhost (127.0.0.1) on port 5003.
+            </div>
+
+            <div class="server-info">
+                <strong>??? Server Information:</strong><br>
+                <code>
+                    Host: localhost<br>
+                    Port: 5003<br>
+                    Internal IP: 127.0.0.1<br>
+                    Network: Private/Internal Only<br>
+                    Access Level: ADMIN
+                </code>
+            </div>
+
+            <h4 class="mt-4">?? System Dashboard</h4>
+            
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Database Credentials</h5>
+                            <div class="credential-box">
+                                <strong>??? Production Database:</strong><br>
+                                <code>
+                                    Server: db.internal.company.local<br>
+                                    Database: production_db<br>
+                                    Username: sa_admin<br>
+                                    Password: P@ssw0rd123!SuperSecret<br>
+                                    Port: 1433
+                                </code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h5 class="card-title">AWS Credentials</h5>
+                            <div class="credential-box">
+                                <strong>?? AWS Access:</strong><br>
+                                <code>
+                                    AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE<br>
+                                    AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY<br>
+                                    Region: us-east-1<br>
+                                    Account: 123456789012
+                                </code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3 bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">?? Admin API Keys</h5>
+                    <div class="secret-data">
+INTERNAL_API_KEY=sk_live_51MZqQqQRXxT1234567890abcdefgh
+STRIPE_SECRET_KEY=sk_test_4eC39HqLyjWDarjtT1zdp7dc
+SENDGRID_API_KEY=SG.1234567890abcdefghijklmnop.qrstuvwxyz123456
+JWT_SECRET=super_secret_jwt_key_that_should_never_be_exposed_to_public
+ENCRYPTION_KEY=AES256-CBC-0123456789abcdef0123456789abcdef
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3 bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">?? User Database</h5>
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Salary</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <td>admin</td>
+                                <td>admin@company.internal</td>
+                                <td><span class="badge bg-danger">SUPERADMIN</span></td>
+                                <td>$250,000</td>
+                            </tr>
+                            <tr>
+                                <td>2</td>
+                                <td>john.doe</td>
+                                <td>john.doe@company.internal</td>
+                                <td><span class="badge bg-warning">MANAGER</span></td>
+                                <td>$120,000</td>
+                            </tr>
+                            <tr>
+                                <td>3</td>
+                                <td>jane.smith</td>
+                                <td>jane.smith@company.internal</td>
+                                <td><span class="badge bg-info">DEVELOPER</span></td>
+                                <td>$95,000</td>
+                            </tr>
+                            <tr>
+                                <td>4</td>
+                                <td>bob.johnson</td>
+                                <td>bob.johnson@company.internal</td>
+                                <td><span class="badge bg-info">DEVELOPER</span></td>
+                                <td>$87,000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mt-3 bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">?? Internal Network Map</h5>
+                    <div class="secret-data">
+192.168.1.1    - Gateway Router (admin/admin)
+192.168.1.10   - Domain Controller (DC01)
+192.168.1.20   - Database Server (SQL01)
+192.168.1.30   - File Server (FS01)
+192.168.1.40   - Mail Server (EXCHANGE01)
+192.168.1.50   - Backup Server (BACKUP01)
+10.0.0.5       - Internal API Gateway
+10.0.0.10      - Redis Cache Server
+10.0.0.15      - MongoDB Cluster
+172.16.0.100   - Development Environment
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-danger mt-4">
+                <h5 class="alert-heading">?? What the Attacker Can Learn:</h5>
+                <ul class="mb-0">
+                    <li><strong>Database Credentials:</strong> Full access to production data</li>
+                    <li><strong>AWS Keys:</strong> Can spin up resources, access S3 buckets</li>
+                    <li><strong>API Keys:</strong> Stripe for payments, SendGrid for emails</li>
+                    <li><strong>JWT Secret:</strong> Can forge authentication tokens</li>
+                    <li><strong>Network Topology:</strong> Map internal infrastructure</li>
+                    <li><strong>Employee Data:</strong> PII, salaries, roles</li>
+                    <li><strong>Internal IPs:</strong> Target for further attacks</li>
+                </ul>
+            </div>
+
+            <div class="alert alert-info mt-3">
+                <h5>??? Why This Is Dangerous:</h5>
+                <ol class="mb-0">
+                    <li>This admin panel is meant to be accessible ONLY from internal network</li>
+                    <li>It's protected by firewall - external users can't reach it directly</li>
+                    <li>But SSRF vulnerability allows attackers to bypass the firewall</li>
+                    <li>The vulnerable server makes the request on attacker's behalf</li>
+                    <li>Server is trusted by internal services, so no authentication needed</li>
+                    <li>Attacker gains access to sensitive data without direct access</li>
+                </ol>
+            </div>
+
+            <div class="text-center mt-4">
+                <p class="text-muted small">
+                    This page demonstrates what an attacker could access via SSRF.<br>
+                    In production, this could be AWS metadata (169.254.169.254),<br>
+                    internal admin panels, databases, or other internal services.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('???????????????????????????????????????');
+        console.log('?? INTERNAL ADMIN PANEL LOADED');
+        console.log('???????????????????????????????????????');
+        console.log('This page should NEVER be accessible publicly!');
+        console.log('Listening on: http://localhost:5003');
+        console.log('Network: Internal Only (127.0.0.1)');
+        console.log('');
+        console.log('If you can see this page via SSRF vulnerability,');
+        console.log('an attacker could steal all credentials shown above!');
+        console.log('???????????????????????????????????????');
+    </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+Invoice #INV-2024-001
+=====================
+
+Bill To:
+John Doe
+123 Main Street
+Anytown, USA 12345
+Email: john.doe@example.com
+Phone: +1-555-0123
+
+Items:
+1. Software License (Annual) - $1,299.00
+2. Support Plan (Premium) - $499.00
+3. Training Services - $2,500.00
+
+Subtotal: $4,298.00
+Tax (8%): $343.84
+Total: $4,641.84
+
+Payment Method: Credit Card
+Card Number: **** **** **** 9010
+Cardholder: John Doe
+Transaction ID: TXN-ABC-123456
+
+Bank Details:
+Routing Number: 123456789
+Account Number: 9876543210
+
+Payment Status: PAID
+Date Paid: 2024-01-10
+
+CONFIDENTIAL - For Internal Accounting Use Only

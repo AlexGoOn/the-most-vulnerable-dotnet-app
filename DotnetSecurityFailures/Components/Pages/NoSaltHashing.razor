@@ -1,0 +1,216 @@
+@page "/vulnerabilities/no-salt-hashing"
+@rendermode InteractiveServer
+@using System.Security.Cryptography
+@using System.Text
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>No Salt Hashing - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="no-salt-hashing" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Password Hashing Demo:</h6>
+        <p class="small text-muted">Compare salted vs unsalted hashing</p>
+
+        <div class="mb-3">
+            <label class="form-label">Password:</label>
+            <input type="text" class="form-control" @bind="password" placeholder="password123" />
+        </div>
+
+        <div class="btn-group w-100 mb-2" role="group">
+            <button class="btn btn-outline-danger" @onclick="HashWithoutSalt">
+                Hash Without Salt
+            </button>
+            <button class="btn btn-outline-success" @onclick="HashWithSalt">
+                Hash With Salt (click multiple times)
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(unsaltedHash))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Unsalted Hash (Vulnerable):</strong>
+                <div class="p-2 bg-dark text-white rounded mt-2 font-monospace small text-break">
+                    @unsaltedHash
+                </div>
+                <p class="mt-2 mb-0 text-danger"><small>Same password always produces same hash!</small></p>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(saltedHash))
+        {
+            <div class="alert alert-success mt-3">
+                <strong>Salted Hash (Secure):</strong>
+                <div class="mt-2">
+                    <strong>Salt:</strong>
+                    <div class="p-2 bg-dark text-white rounded mt-1 font-monospace small text-break">
+                        @salt
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <strong>Hash:</strong>
+                    <div class="p-2 bg-dark text-white rounded mt-1 font-monospace small text-break">
+                        @saltedHash
+                    </div>
+                </div>
+                <p class="mt-2 mb-0 text-success"><small>Unique salt makes rainbow table attacks infeasible!</small></p>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Hashing passwords without a unique salt allows attackers to use rainbow tables 
+            (pre-computed hash databases) and makes it trivial to identify users with identical passwords.
+        </p>
+
+        <h6 class="mt-3">Attack Vectors:</h6>
+        <ul>
+            <li><strong>Rainbow Tables:</strong> Pre-computed hashes for common passwords
+                <ul>
+                    <li>MD5: 15GB table = billions of passwords</li>
+                    <li>Instant lookup of common passwords</li>
+                </ul>
+            </li>
+            <li><strong>Duplicate Detection:</strong> Identify users with same password</li>
+            <li><strong>Bulk Compromise:</strong> Crack one, crack all identical</li>
+        </ul>
+
+        <h6 class="mt-3">Real-World Breaches:</h6>
+        <ul>
+            <li><strong>LinkedIn (2012):</strong> 6.5M SHA1 hashes, no salt - 90% cracked</li>
+            <li><strong>Adobe (2013):</strong> 150M passwords, weak encryption</li>
+            <li><strong>Yahoo (2014):</strong> 500M accounts, MD5 hashes</li>
+        </ul>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li>Mass password compromise</li>
+            <li>Account takeover</li>
+            <li>Credential stuffing attacks</li>
+            <li>Regulatory fines (GDPR)</li>
+        </ul>
+    </ExplanationContent>
+
+    <PreventionContent>
+        <h5>Protection Against Unsalted Password Hashing:</h5>
+        <ol>
+            <li><strong>ASP.NET Core Identity</strong> - Use built-in PasswordHasher (PBKDF2-based)</li>
+            <li><strong>You Can Use Argon2</strong> - Winner of Password Hashing Competition, memory-hard</li>
+            <li><strong>Never Use MD5/SHA1 for Salt</strong> - Too fast, rainbow tables readily available</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private string password = "";
+    private string unsaltedHash = "";
+    private string saltedHash = "";
+    private string salt = "";
+
+    private const string VulnerableCode = """
+// DANGEROUS: Hashing without salt
+public string HashPassword(string password)
+{
+    using var sha256 = SHA256.Create();
+    var bytes = Encoding.UTF8.GetBytes(password);
+    var hash = sha256.ComputeHash(bytes);
+    return Convert.ToBase64String(hash);
+    
+    // Problem: Same password = same hash!
+    // User1: "password123" -> "HjK3l2..."
+    // User2: "password123" -> "HjK3l2..." (identical!)
+    // User3: "password123" -> "HjK3l2..." (identical!)
+}
+
+// User registration (vulnerable)
+public void RegisterUser(string username, string password)
+{
+    var user = new User
+    {
+        Username = username,
+        PasswordHash = HashPassword(password)  // No salt!
+    };
+    _context.Users.Add(user);
+    _context.SaveChanges();
+}
+
+// Attacker downloads database and finds:
+// id | username | password_hash
+//  1 | alice    | HjK3l2...  <- Same hash!
+//  2 | bob      | HjK3l2...  <- Same hash!
+//  3 | charlie  | HjK3l2...  <- Same hash!
+//
+// Look up in rainbow table -> "password123"
+// All 3 accounts compromised instantly!
+""";
+
+    private const string SafeCode = """
+
+// Use ASP.NET Core Identity PasswordHasher (which uses PBKDF2 with salt)
+public class SecurePasswordHasher
+{
+    private readonly PasswordHasher<User> _hasher = new();
+    
+    public string HashPassword(User user, string password)
+    {
+        // Uses PBKDF2 with 256-bit salt, 10,000 iterations
+        return _hasher.HashPassword(user, password);
+    }
+    
+    public bool VerifyPassword(
+        User user, string password, string hash)
+    {
+        var result = _hasher.VerifyHashedPassword(
+            user, hash, password);
+        return result == PasswordVerificationResult.Success;
+    }
+}
+""";
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("no-salt-hashing")
+            ?? throw new InvalidOperationException($"Vulnerability not found: no-salt-hashing");
+    }
+
+    private void HashWithoutSalt()
+    {
+        unsaltedHash = "";
+        saltedHash = "";
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        using var sha256 = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(password);
+        var hash = sha256.ComputeHash(bytes);
+        unsaltedHash = Convert.ToBase64String(hash);
+    }
+
+    private void HashWithSalt()
+    {
+        unsaltedHash = "";
+        saltedHash = "";
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        var saltBytes = new byte[16];
+        RandomNumberGenerator.Fill(saltBytes);
+        
+        using var deriveBytes = new Rfc2898DeriveBytes(
+            password,
+            saltBytes,
+            iterations: 100_000,
+            HashAlgorithmName.SHA256);
+        
+        var hash = deriveBytes.GetBytes(32);
+        
+        salt = Convert.ToBase64String(saltBytes);
+        saltedHash = Convert.ToBase64String(hash);
+    }
+}

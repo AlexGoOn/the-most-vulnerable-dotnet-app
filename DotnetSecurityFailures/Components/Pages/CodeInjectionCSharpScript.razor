@@ -1,0 +1,290 @@
+@page "/vulnerabilities/code-injection-csharpscript"
+@using Microsoft.CodeAnalysis.CSharp.Scripting
+@using Microsoft.CodeAnalysis.Scripting
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@rendermode InteractiveServer
+
+<PageTitle>Code Injection (CSharpScript) - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="code-injection-csharpscript" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="alert alert-info">
+            <strong>Available Orders:</strong>
+            <ul class="mb-0 small">
+                <li>Order #1001: Amount = $150, Status = "Pending", Customer = "Alice"</li>
+                <li>Order #1002: Amount = $200, Status = "Completed", Customer = "Bob"</li>
+                <li>Order #1003: Amount = $75, Status = "Pending", Customer = "Charlie"</li>
+                <li>Order #1004: Amount = $500, Status = "Completed", Customer = "Diana"</li>
+            </ul>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Filter Expression:</label>
+            <textarea class="form-control font-monospace" 
+                      @bind="filterExpression" 
+                      @bind:event="oninput"
+                      rows="3"
+                      placeholder="e.g., order.Amount > 100"></textarea>
+            <div class="form-text">
+                Enter a C# expression to filter orders. Available: Amount, Status, Customer, OrderId
+            </div>
+        </div>
+
+        <button class="btn btn-primary" @onclick="ApplyFilter" disabled="@isExecuting">
+            @(isExecuting ? "Executing..." : "Apply Filter")
+        </button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+
+        @if (filteredOrders.Any())
+        {
+            <div class="alert alert-success mt-3">
+                <strong>Filtered Results (@filteredOrders.Count orders):</strong>
+                <ul class="mb-0 small">
+                    @foreach (var order in filteredOrders)
+                    {
+                        <li>Order #@order.OrderId: Amount = $@order.Amount, Status = "@order.Status", Customer = "@order.Customer"</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these expressions</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilter("order.Amount > 100")'>order.Amount > 100</code>
+                    - legitimate filter
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilter("order.Status == \"Pending\"")'>order.Status == "Pending"</code>
+                    - legitimate filter
+                </li>
+            </ul>
+            <div class="mt-2">
+                <strong>Malicious Injection</strong>
+            </div>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetFilter("System.Diagnostics.Process.Start(\"calc.exe\"); order.Amount > 0")'>
+                        System.Diagnostics.Process.Start("calc.exe"); order.Amount > 0
+                    </code>
+                    - launches Calculator!
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Code Injection through CSharpScript</strong> occurs when applications use dynamic 
+            C# code evaluation with untrusted user input, allowing arbitrary code execution on the server.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application uses CSharpScript for flexible filtering
+2. Developer passes user input directly to script evaluator
+3. Attacker injects malicious C# code:
+   Process.Start("calc.exe"); order.Amount > 0
+4. Script engine compiles and executes the injected code
+5. Malicious operations performed with server privileges
+
+Result: Complete server compromise!</code></pre>
+
+        <h6 class="mt-4">What attackers can do:</h6>
+        <ul>
+            <li><strong>Execute commands:</strong> Launch processes, run system commands</li>
+            <li><strong>File system access:</strong> Read/write/delete any files</li>
+            <li><strong>Access secrets:</strong> Read environment variables, connection strings</li>
+            <li><strong>Network operations:</strong> Make HTTP requests, scan internal network</li>
+            <li><strong>Reflection attacks:</strong> Access private members, bypass security</li>
+            <li><strong>Data exfiltration:</strong> Steal sensitive data from memory/database</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Code Injection:</h5>
+        <ol>
+            <li><strong>Avoid Dynamic Code Evaluation:</strong> Use Expression Trees instead of CSharpScript</li>
+            <li><strong>Query Builder Pattern:</strong> Build queries programmatically instead of dynamic code</li>
+            <li><strong>If CSharpScript Required:</strong> Use sandboxing with whitelists/blacklists</li>
+            <li><strong>Process Isolation:</strong> Run scripts in separate, restricted processes</li>
+            <li><strong>Container Isolation:</strong> Use Docker/Kubernetes for isolation</li>
+            <li><strong>Validation:</strong> Blacklist dangerous namespaces (System.IO, System.Diagnostics, System.Reflection)</li>
+            <li><strong>Timeouts:</strong> Set aggressive execution timeouts</li>
+            <li><strong>Least Privilege:</strong> Run with minimal permissions</li>
+            <li><strong>Monitoring:</strong> Monitor for suspicious code patterns</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Use Expression Trees (RECOMMENDED)
+
+using System.Linq.Expressions;
+
+public class SafeOrderFilterService
+{
+    private static readonly Dictionary<string, 
+        Func<Expression, Expression, Expression>> 
+        AllowedOperators = new()
+    {
+        { ">", Expression.GreaterThan },
+        { "<", Expression.LessThan },
+        { "==", Expression.Equal }
+    };
+
+    public List<Order> FilterOrders(
+        List<Order> orders, 
+        FilterCriteria criteria)
+    {
+        var predicate = BuildSafePredicate(criteria);
+        return orders.Where(predicate.Compile()).ToList();
+    }
+
+    private Expression<Func<Order, bool>> BuildSafePredicate(
+        FilterCriteria criteria)
+    {
+        var parameter = Expression.Parameter(typeof(Order), "order;
+        
+        // Whitelist allowed properties
+        var allowedProps = new[] 
+        { 
+            "Amount", "Status", "Customer", "OrderId" 
+        };
+        if (!allowedProps.Contains(criteria.Property))
+            throw new ArgumentException("Property not allowed;
+        
+        var property = Expression.Property(parameter, criteria.Property);
+        var value = Expression.Constant(criteria.Value);
+        
+        // Whitelist allowed operators
+        if (!AllowedOperators.ContainsKey(criteria.Operator))
+            throw new ArgumentException("Operator not allowed;
+        
+        var comparison = AllowedOperators[criteria.Operator](
+            property, value);
+        
+        return Expression.Lambda<Func<Order, bool>>(
+            comparison, parameter);
+    }
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Using CSharpScript with user input!
+using Microsoft.CodeAnalysis.CSharp.Scripting;
+
+public async Task<List<Order>> FilterOrders(
+    List<Order> orders, 
+    string userFilterExpression)
+{
+    var options = ScriptOptions.Default
+        .WithReferences(typeof(Order).Assembly)
+        .WithImports("System", "System.IO", "System.Diagnostics;
+    
+    foreach (var order in orders)
+    {
+        // VULNERABLE: User input executed as C# code!
+        var script = $"var order = new {{ OrderId = {order.OrderId} }}; " +
+                     $"{userFilterExpression}";
+        
+        // Execute arbitrary user code with NO validation!
+        var result = await CSharpScript.EvaluateAsync<bool>(
+            script, options);
+        // ...
+    }
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string filterExpression = "order.Amount > 100";
+    private string errorMessage = "";
+    private bool isExecuting = false;
+    private List<Order> filteredOrders = new();
+
+    private List<Order> allOrders = new()
+    {
+        new() { OrderId = 1001, Amount = 150, Status = "Pending", Customer = "Alice" },
+        new() { OrderId = 1002, Amount = 200, Status = "Completed", Customer = "Bob" },
+        new() { OrderId = 1003, Amount = 75, Status = "Pending", Customer = "Charlie" },
+        new() { OrderId = 1004, Amount = 500, Status = "Completed", Customer = "Diana" }
+    };
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("code-injection-csharpscript")
+            ?? throw new InvalidOperationException($"Vulnerability not found: code-injection-csharpscript");
+    }
+
+    private async Task ApplyFilter()
+    {
+        errorMessage = "";
+        filteredOrders.Clear();
+        isExecuting = true;
+
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(100);
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(filterExpression))
+            {
+                errorMessage = "Filter expression cannot be empty";
+                return;
+            }
+
+            // VULNERABLE CODE: Real CSharpScript execution without validation!
+            var options = ScriptOptions.Default
+                .WithReferences(typeof(Order).Assembly)
+                .WithImports("System", "System.Linq", "System.IO", "System.Diagnostics");
+
+            foreach (var order in allOrders)
+            {
+                var script = $@"
+var order = new {{ 
+    OrderId = {order.OrderId}, 
+    Amount = {order.Amount}m, 
+    Status = ""{order.Status}"", 
+    Customer = ""{order.Customer}"" 
+}};
+{filterExpression}";
+
+                // WARNING: This executes arbitrary code!
+                var result = await CSharpScript.EvaluateAsync<bool>(script, options);
+
+                if (result)
+                {
+                    filteredOrders.Add(order);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Script execution failed: {ex.Message}";
+        }
+        finally
+        {
+            isExecuting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void SetFilter(string filter)
+    {
+        filterExpression = filter;
+    }
+
+    public class Order
+    {
+        public int OrderId { get; set; }
+        public decimal Amount { get; set; }
+        public string Status { get; set; } = "";
+        public string Customer { get; set; } = "";
+    }
+}

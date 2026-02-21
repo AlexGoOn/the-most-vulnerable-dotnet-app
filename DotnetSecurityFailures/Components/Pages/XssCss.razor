@@ -1,0 +1,208 @@
+@page "/vulnerabilities/xss-css"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XSS via CSS - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xss-css" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Custom Styling with CSS Injection:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" 
+                   class="form-control" 
+                   @bind="colorInput" 
+                   placeholder="Enter color value" />
+            <button class="btn btn-primary" @onclick="ApplyStyle">Apply Style</button>
+        </div>
+        <small class="text-muted">Enter a color value to style the content below</small>
+
+        @if (!string.IsNullOrEmpty(executedCss))
+        {
+            <div class="alert alert-info mt-3">
+                <strong>Applied CSS:</strong>
+                <pre class="mb-0 mt-2 small"><code>style="color: @executedCss;"</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(renderedHtml))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Rendered Output (VULNERABLE):</strong>
+                <div class="mt-2 p-2 bg-white border">
+                    @((MarkupString)renderedHtml)
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetColor(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>CSS injection can lead to XSS when user input is placed directly into style attributes without proper sanitization. Attackers can break out of the style attribute context to inject malicious HTML and JavaScript.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: red">&lt;script>alert('XSS')&lt;/script>&lt;div style="
+
+Vulnerable Code:
+renderedHtml = "&lt;div style=\"color: " + userInput + "; padding: 20px;\">" +
+               "    Custom Styled Content" +
+               "&lt;/div>";
+
+HTML becomes:
+&lt;div style="color: red">&lt;script>alert('XSS')&lt;/script>&lt;div style="; padding: 20px;">
+    Custom Styled Content
+&lt;/div>
+
+Result: 
+1. red" closes the color value and the style attribute
+2. > closes the opening div tag
+3. &lt;script>alert('XSS')&lt;/script> executes JavaScript!
+4. &lt;div style=" consumes the remaining quote and attribute
+5. JavaScript runs with full page access</code></pre>
+
+        <h6 class="mt-3">Alternative attack with img onerror:</h6>
+        <pre class="bg-light p-2 small"><code>Input: red">&lt;img src=x onerror=alert('XSS')>&lt;div style="
+
+HTML becomes:
+&lt;div style="color: red">&lt;img src=x onerror=alert('XSS')>&lt;div style="; padding: 20px;">
+    Custom Styled Content
+&lt;/div>
+
+Result: 
+1. Breaks out of style attribute with "
+2. Image fails to load (invalid src)
+3. onerror event handler executes
+4. alert('XSS') runs immediately!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Script injection</strong> - inject script tags with malicious code</li>
+            <li><strong>Event handler injection</strong> - add onerror, onload handlers</li>
+            <li><strong>Session hijacking</strong> - steal cookies via document.cookie</li>
+            <li><strong>Credential theft</strong> - capture keystrokes or form data</li>
+            <li><strong>Page manipulation</strong> - modify content, create fake login forms</li>
+            <li><strong>Data exfiltration</strong> - send sensitive data to attacker's server</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against CSS Injection XSS:</h5>
+        <ol>
+            <li><strong>Don't' use MarkupString with user input</strong> - Use Blazor's data binding (@@userInput) instead, which automatically HTML-encodes values</li>
+            <li><strong>HTML Encoding</strong> - Encode user input: HtmlEncoder.Default.Encode(userInput)</li>
+            <li><strong>CSS Sanitization Libraries</strong> - Use HtmlSanitizer (NuGet: HtmlSanitizer) to sanitize HTML with inline styles</li>
+            <li><strong>Content Security Policy (CSP)</strong> - Implement CSP headers to block inline scripts: script-src 'self'</li>
+            <li><strong>Use CSS Classes</strong> - Prefer applying predefined CSS classes over inline styles when possible</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// BEST APPROACH 1: Don't use MarkupString - use Blazor binding instead
+<div style="color: @@userColor; padding: 20px;">
+    Custom Styled Content
+</div>
+
+// Blazor automatically HTML-encodes @@userColor
+// Input: red"><script>alert('XSS')</script>
+// Output: red">&lt;script&gt;alert('XSS')&lt;/script&gt;
+// Attack prevented!
+
+
+// APPROACH 2: Use CSS sanitization library (for complex scenarios)
+private void SafeApplyStyleAdvanced()
+{
+    var sanitizer = new HtmlSanitizer();
+    
+    // Configure allowed CSS properties
+    sanitizer.AllowedCssProperties.Clear();
+    sanitizer.AllowedCssProperties.Add("color;
+    
+    // Sanitize the entire HTML including style
+    var safeHtml = sanitizer.Sanitize(
+        $"<div style=\"color: {colorInput}\"><Custom Styled Content/div>;
+    
+    renderedHtml = safeHtml;
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: User input in style attribute with MarkupString
+private void ApplyStyle()
+{
+    var userColor = colorInput;
+    
+    // VULNERABLE - no sanitization
+    renderedHtml = "<div style=\"color: " + userColor + "; padding: 20px;\">" +
+                   "    Custom Styled Content" +
+                   "</div>";
+    
+    // MarkupString renders raw HTML
+    // If userColor = "red\"><script>alert('XSS')</script><div style=\""
+    // The script will execute!
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string colorInput = "";
+    private string? executedCss;
+    private string? renderedHtml;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xss-css")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xss-css");
+    }
+
+    private void ApplyStyle()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(colorInput))
+        {
+            renderedHtml = "Please enter a color value";
+            return;
+        }
+
+        executedCss = colorInput;
+        renderedHtml = "<div style=\"color: " + colorInput + "; padding: 20px; border: 1px solid #ddd; background: #f8f9fa;\">Custom Styled Content</div>";
+
+        var predefinedAttack = vulnerability.PredefinedAttacks
+            .FirstOrDefault(a => a.Input == colorInput);
+        attackAnalysis = predefinedAttack?.Description ?? "Custom CSS value applied.";
+    }
+
+    private void SetColor(string color)
+    {
+        colorInput = color;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        executedCss = null;
+        renderedHtml = null;
+        attackAnalysis = null;
+    }
+}

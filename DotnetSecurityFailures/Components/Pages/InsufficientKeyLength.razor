@@ -1,0 +1,330 @@
+@page "/vulnerabilities/insufficient-key-length"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using System.Security.Cryptography
+@using System.Text
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Insufficient Key Length - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="insufficient-key-length" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Test Encryption Algorithms:</h6>
+        <p class="small text-muted">Compare weak and strong key lengths</p>
+
+        <div class="mb-3">
+            <label class="form-label">Plaintext:</label>
+            <input type="text" class="form-control" @bind="plaintext" placeholder="Secret message" />
+        </div>
+
+        <div class="btn-group w-100 mb-2" role="group">
+            <button class="btn btn-outline-danger" @onclick="@(() => TestAlgorithm("DES"))">
+                DES (56-bit)
+            </button>
+            <button class="btn btn-outline-warning" @onclick="@(() => TestAlgorithm("3DES"))">
+                3DES (112-bit)
+            </button>
+            <button class="btn btn-outline-success" @onclick="@(() => TestAlgorithm("AES256"))">
+                AES-256 (256-bit)
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(encryptionResult))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>@algorithmName</strong>
+                <div class="mt-2">
+                    <strong>Key Length:</strong> @keyLength bits<br/>
+                    <strong>Status:</strong> @securityStatus<br/>
+                    <strong>Ciphertext:</strong>
+                    <div class="p-2 bg-dark text-white rounded mt-1 font-monospace small text-break">
+                        @encryptionResult
+                    </div>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(bruteForceInfo))
+                {
+                    <div class="mt-3 pt-3 border-top">
+                        <strong>Brute Force Analysis:</strong>
+                        <pre class="mb-0 mt-2 small" style="white-space: pre-wrap;">@bruteForceInfo</pre>
+                    </div>
+                }
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Weak encryption keys can be broken through brute force attacks. Modern computing power 
+            makes short keys (&lt;128 bits) vulnerable. DES was broken in 1998, 3DES deprecated in 2023.
+        </p>
+
+        <h6 class="mt-3">Key Length Comparison:</h6>
+        <table class="table table-sm table-bordered">
+            <thead>
+                <tr>
+                    <th>Algorithm</th>
+                    <th>Key Size</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>DES</td>
+                    <td>56-bit</td>
+                    <td><span class="badge bg-danger">BROKEN</span></td>
+                </tr>
+                <tr>
+                    <td>3DES</td>
+                    <td>112-bit</td>
+                    <td><span class="badge bg-warning text-dark">DEPRECATED</span></td>
+                </tr>
+                <tr>
+                    <td>AES-256</td>
+                    <td>256-bit</td>
+                    <td><span class="badge bg-success">SECURE</span></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h6 class="mt-3">Real-World Attacks:</h6>
+        <ul>
+            <li><strong>1998:</strong> DES cracked in 56 hours (EFF's Deep Crack)</li>
+            <li><strong>2016:</strong> Sweet32 attack on 3DES</li>
+            <li><strong>Today:</strong> GPU can test billions of DES keys/second</li>
+        </ul>
+
+        <h6 class="mt-3">Consequences:</h6>
+        <ul>
+            <li>Data decryption through brute force</li>
+            <li>Compromise of encrypted communications</li>
+            <li>Compliance violations (PCI-DSS, HIPAA)</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Insufficient Key Length:</h5>
+        <ol>
+            <li><strong>Use AES-256</strong> - Industry standard with 256-bit keys</li>
+            <li><strong>Never use DES</strong> - Broken since 1998, crackable in hours</li>
+            <li><strong>Avoid 3DES</strong> - Deprecated by NIST in 2023</li>
+            <li><strong>RSA: 2048-bit minimum</strong> - 4096-bit for long-term secrets</li>
+            <li><strong>Key Derivation</strong> - Use PBKDF2 or Argon2 with high iterations</li>
+            <li><strong>AES-GCM preferred</strong> - Provides authentication and encryption</li>
+            <li><strong>Regular Updates</strong> - Follow NIST and OWASP recommendations</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Using AES-256
+public (byte[] ciphertext, byte[] iv) EncryptAES256(
+    byte[] data, byte[] key)
+{
+    using var aes = Aes.Create();
+    aes.KeySize = 256;  // 256-bit key
+    aes.Key = key;      // Must be 32 bytes
+    aes.Mode = CipherMode.CBC;
+    aes.Padding = PaddingMode.PKCS7;
+    aes.GenerateIV();
+    
+    using var encryptor = aes.CreateEncryptor();
+    var ciphertext = encryptor.TransformFinalBlock(
+        data, 0, data.Length);
+    
+    return (ciphertext, aes.IV);
+    
+    // 2^256 keys = computationally infeasible
+    // Would take longer than age of universe
+}
+
+// BETTER: Use AES-GCM (authenticated)
+public (byte[] ciphertext, byte[] nonce, byte[] tag)
+    EncryptAESGCM(byte[] data, byte[] key)
+{
+    var nonce = new byte[AesGcm.NonceByteSizes.MaxSize];
+    var tag = new byte[AesGcm.TagByteSizes.MaxSize];
+    var ciphertext = new byte[data.Length];
+    
+    using var aesGcm = new AesGcm(key);
+    
+    RandomNumberGenerator.Fill(nonce);
+    aesGcm.Encrypt(nonce, data, ciphertext, tag);
+    
+    return (ciphertext, nonce, tag);
+}
+
+// Proper key derivation from password
+private byte[] DeriveKey(string password, byte[] salt)
+{
+    using var deriveBytes = new Rfc2898DeriveBytes(
+        password,
+        salt,
+        iterations: 100_000,
+        HashAlgorithmName.SHA256);
+    
+    return deriveBytes.GetBytes(32);  // 256-bit key
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Using DES (56-bit key)
+public byte[] EncryptDES(byte[] data, byte[] key)
+{
+    using var des = DES.Create();
+    des.Key = key;  // Only 56-bit effective
+    des.Mode = CipherMode.CBC;
+    des.GenerateIV();
+    
+    using var encryptor = des.CreateEncryptor();
+    return encryptor.TransformFinalBlock(data, 0, data.Length);
+    
+    // 2^56 = 72 quadrillion keys
+    // Modern GPU: billions per second
+    // Time to crack: Hours
+}
+
+// DANGEROUS: Using 3DES (deprecated)
+public byte[] Encrypt3DES(byte[] data, byte[] key)
+{
+    using var des3 = TripleDES.Create();
+    des3.Key = key;  // 112-bit effective security
+    des3.Mode = CipherMode.CBC;
+    des3.GenerateIV();
+    
+    using var encryptor = des3.CreateEncryptor();
+    return encryptor.TransformFinalBlock(data, 0, data.Length);
+    
+    // Vulnerable to Sweet32 attack
+    // NIST deprecated in 2023
+}
+""";
+
+    private string plaintext = "Secret message";
+    private string encryptionResult = "";
+    private string algorithmName = "";
+    private string keyLength = "";
+    private string securityStatus = "";
+    private string bruteForceInfo = "";
+    private string resultCssClass = "";
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("insufficient-key-length")
+            ?? throw new InvalidOperationException($"Vulnerability not found: insufficient-key-length");
+    }
+
+    private void TestAlgorithm(string algorithm)
+    {
+        if (string.IsNullOrWhiteSpace(plaintext))
+        {
+            plaintext = "Secret message";
+        }
+
+        var data = Encoding.UTF8.GetBytes(plaintext);
+
+        try
+        {
+            switch (algorithm)
+            {
+                case "DES":
+                    EncryptWithDES(data);
+                    break;
+                case "3DES":
+                    EncryptWith3DES(data);
+                    break;
+                case "AES256":
+                    EncryptWithAES(data, 256);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            encryptionResult = $"Error: {ex.Message}";
+            resultCssClass = "alert alert-danger";
+        }
+    }
+
+    private void EncryptWithDES(byte[] data)
+    {
+        #pragma warning disable SYSLIB0001
+        using var des = DES.Create();
+        #pragma warning restore SYSLIB0001
+        des.GenerateKey();
+        des.GenerateIV();
+        des.Mode = CipherMode.CBC;
+        
+        using var encryptor = des.CreateEncryptor();
+        var encrypted = encryptor.TransformFinalBlock(data, 0, data.Length);
+        
+        algorithmName = "DES (Data Encryption Standard)";
+        keyLength = "56";
+        securityStatus = "BROKEN - DO NOT USE";
+        resultCssClass = "alert alert-danger";
+        encryptionResult = Convert.ToBase64String(encrypted);
+        
+        bruteForceInfo = 
+            "Key Space: 2^56 = 72 quadrillion keys\n\n" +
+            "Modern Attack:\n" +
+            "- Single GPU: ~1 billion keys/second\n" +
+            "- Time to crack: ~20 hours\n" +
+            "- Cost on cloud: < $100\n\n" +
+            "Historical:\n" +
+            "- 1998: Broken in 56 hours\n" +
+            "- Today: Can be broken in hours\n\n" +
+            "Impact: ANY DES-encrypted data can be decrypted!";
+    }
+
+    private void EncryptWith3DES(byte[] data)
+    {
+        #pragma warning disable SYSLIB0021
+        using var des3 = TripleDES.Create();
+        #pragma warning restore SYSLIB0021
+        des3.GenerateKey();
+        des3.GenerateIV();
+        des3.Mode = CipherMode.CBC;
+        
+        using var encryptor = des3.CreateEncryptor();
+        var encrypted = encryptor.TransformFinalBlock(data, 0, data.Length);
+        
+        algorithmName = "3DES (Triple DES)";
+        keyLength = "112 (effective) / 168 (nominal)";
+        securityStatus = "DEPRECATED - Migrate to AES";
+        resultCssClass = "alert alert-warning";
+        encryptionResult = Convert.ToBase64String(encrypted);
+        
+        bruteForceInfo = 
+            "Effective Security: 112-bit\n\n" +
+            "Issues:\n" +
+            "- NIST deprecated in 2023\n" +
+            "- Sweet32 attack (2016)\n" +
+            "- Slower than AES (3x operations)\n" +
+            "- 64-bit block size vulnerable\n\n" +
+            "Recommendation: Migrate to AES-256";
+    }
+
+    private void EncryptWithAES(byte[] data, int keySize)
+    {
+        using var aes = Aes.Create();
+        aes.KeySize = keySize;
+        aes.GenerateKey();
+        aes.GenerateIV();
+        aes.Mode = CipherMode.CBC;
+        
+        using var encryptor = aes.CreateEncryptor();
+        var encrypted = encryptor.TransformFinalBlock(data, 0, data.Length);
+        
+        algorithmName = $"AES-{keySize}";
+        keyLength = keySize.ToString();
+        securityStatus = "SECURE - Industry standard";
+        resultCssClass = "alert alert-success";
+        encryptionResult = Convert.ToBase64String(encrypted);
+        
+        bruteForceInfo = 
+            "Key Space: 2^256 keys\n\n" +
+            "Brute Force Impossibility:\n" +
+            "- Even with quantium computers in the future\n" +
+            "- Testing quadrillions of keys per second\n" +
+            "- Would take longer than universe will exist\n\n" +
+            "Status: NIST approved, maximum security\n" +
+            "Use Cases: Top secret data, long-term secrets\n";
+    }
+}

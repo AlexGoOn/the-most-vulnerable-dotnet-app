@@ -1,0 +1,273 @@
+@page "/vulnerabilities/weak-random"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using System.Security.Cryptography
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Weak Random Number Generation - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="weak-random" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Password Reset Token Generator:</h6>
+        
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <button class="btn btn-danger btn-sm w-100 mb-2" @onclick="GenerateVictimToken">
+                    Step 1: Generate Token
+                </button>
+                @if (victimToken != null)
+                {
+                    <div class="alert alert-warning py-2 mb-0">
+                        <small><strong>Token:</strong></small><br/>
+                        <code class="small">@victimToken</code><br/>
+                        <small class="text-muted">@victimTimestamp.ToString("HH:mm:ss.fff")</small>
+                    </div>
+                }
+            </div>
+            
+            <div class="col-md-4">
+                <button class="btn btn-warning btn-sm w-100 mb-2" @onclick="AttackPredictTokens" disabled="@(victimToken == null)">
+                    Step 2: Predict Tokens
+                </button>
+                @if (predictedTokens.Any())
+                {
+                    <div class="alert alert-danger py-2 mb-0">
+                        <small><strong>Predicted:</strong></small><br/>
+                        @foreach (var predicted in predictedTokens.Take(2))
+                        {
+                            <code class="small d-block">@predicted</code>
+                        }
+                        <small class="text-muted">+@(predictedTokens.Count - 2) more...</small>
+                    </div>
+                }
+            </div>
+            
+            <div class="col-md-4">
+                <button class="btn btn-info btn-sm w-100 mb-2" @onclick="VerifyPredictions" disabled="@(!predictedTokens.Any())">
+                    Step 3: Verify Attack
+                </button>
+                @if (actualNextTokens.Any() && attackSuccessRate > 0)
+                {
+                    <div class="alert alert-success py-2 mb-0">
+                        <small><strong>Attack Success!</strong></small><br/>
+                        <span class="badge bg-danger">@attackSuccessRate%</span> matched<br/>
+                        <small>@matchedTokens/@totalComparedTokens correct!</small>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (actualNextTokens.Any())
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>ATTACK VERIFICATION:</strong>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Predicted</th>
+                                <th>Actual</th>
+                                <th>Match?</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < Math.Min(5, Math.Min(actualNextTokens.Count, predictedTokens.Count)); i++)
+                            {
+                                var match = actualNextTokens[i] == predictedTokens[i];
+                                <tr class="@(match ? "table-danger" : "")">
+                                    <td class="font-monospace small">@predictedTokens[i]</td>
+                                    <td class="font-monospace small">@actualNextTokens[i]</td>
+                                    <td class="text-center">
+                                        @if (match)
+                                        {
+                                            <span class="badge bg-danger">MATCH</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">NO</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>How This Attack Works:</strong>
+            <ol class="mb-0 small">
+                <li><strong>Time-based seed:</strong> new Random() uses Environment.TickCount</li>
+                <li><strong>Known algorithm:</strong> Linear congruential generator (predictable)</li>
+                <li><strong>Seed recovery:</strong> Attacker knows approximate generation time</li>
+                <li><strong>Replay attack:</strong> Same seed = exact same sequence = 100% prediction</li>
+            </ol>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>The application uses <code>System.Random</code> to generate security tokens. 
+        This class is not cryptographically secure and uses a predictable seed based on time.</p>
+        
+        <h6 class="mt-4">Why Random is Weak:</h6>
+        <ul>
+            <li><strong>Predictable seed</strong> - uses Environment.TickCount (time-based)</li>
+            <li><strong>Deterministic algorithm</strong> - linear congruential generator</li>
+            <li><strong>Small state space</strong> - limited randomness pool</li>
+            <li><strong>Reproducible</strong> - same seed = same sequence</li>
+        </ul>
+        
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li>Password reset tokens can be predicted</li>
+            <li>Session IDs can be guessed</li>
+            <li>API keys become brute-forceable</li>
+            <li>CSRF tokens can be forged</li>
+            <li>Complete account takeover possible</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Weak Randomness:</h5>
+        <ol>
+            <li><strong>Use RandomNumberGenerator</strong> - for all security-sensitive random values</li>
+            <li><strong>Don't use Random</strong> - for tokens, keys, IVs, salts, session IDs, or any security purpose</li>
+            <li><strong>Sufficient entropy</strong> - use at least 128 bits (16 bytes) for security tokens</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Use RandomNumberGenerator
+using System.Security.Cryptography;
+
+public string GenerateResetToken()
+{
+    var bytes = new byte[32];
+    RandomNumberGenerator.Fill(bytes);
+    return Convert.ToBase64String(bytes);
+}
+
+// Why this is secure:
+// - Uses OS entropy (hardware RNG, system events)
+// - No predictable seed
+// - Cannot be replayed even with exact timing
+// - Cryptographically secure algorithm (CSPRNG)
+""";
+    private const string VulnerableCode = """
+// Using System.Random for security
+public string GenerateResetToken()
+{
+    var random = new Random();
+    var bytes = new byte[32];
+    random.NextBytes(bytes);
+    return Convert.ToBase64String(bytes);
+}
+
+// Also dangerous:
+var sessionId = new Random().Next(100000, 999999);
+
+// Not crypto-secure!
+var token = Guid.NewGuid().ToString();
+
+// ATTACKER CODE:
+// If attacker knows approximate time...
+var seed = Environment.TickCount;
+var attackerRng = new Random(seed);
+var predictedToken = attackerRng.Next(); // SAME!
+
+// Real attack scenario:
+// 1. User requests password reset at 14:30:45
+// 2. Attacker knows time (+1 second window)
+// 3. Tries ~2000 possible seeds
+// 4. Generates valid tokens for ANY user
+// 5. Complete account takeover!
+""";
+
+    // Attack simulation variables
+    private string? victimToken;
+    private DateTime victimTimestamp;
+    private int victimSeed;
+    private Random? victimRandom;
+    private List<string> predictedTokens = new();
+    private List<string> actualNextTokens = new();
+    private int matchedTokens;
+    private int totalComparedTokens;
+    private int attackSuccessRate;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("weak-random")
+            ?? throw new InvalidOperationException($"Vulnerability not found: weak-random");
+    }
+
+    private void GenerateVictimToken()
+    {
+        // Simulate victim system generating a token
+        victimTimestamp = DateTime.Now;
+        // This is what happens inside new Random() - uses time as seed
+        victimSeed = Environment.TickCount;
+        victimRandom = new Random(victimSeed);
+        
+        // Generate token like many real systems do
+        var tokenNumber = victimRandom.Next(100000, 999999);
+        victimToken = $"RESET-{tokenNumber}";
+        
+        // Clear previous attack results
+        predictedTokens.Clear();
+        actualNextTokens.Clear();
+        matchedTokens = 0;
+        totalComparedTokens = 0;
+        attackSuccessRate = 0;
+    }
+
+    private void AttackPredictTokens()
+    {
+        if (victimRandom == null) return;
+        
+        predictedTokens.Clear();
+        
+        // ATTACK: Attacker creates Random with same seed (knows time)
+        var attackerRandom = new Random(victimSeed);
+        
+        // Skip the first token (already generated by victim)
+        attackerRandom.Next(100000, 999999);
+        
+        // Now predict the next 10 tokens that victim system will generate
+        for (int i = 0; i < 10; i++)
+        {
+            var predictedNumber = attackerRandom.Next(100000, 999999);
+            predictedTokens.Add($"RESET-{predictedNumber}");
+        }
+    }
+
+    private void VerifyPredictions()
+    {
+        if (victimRandom == null) return;
+        
+        actualNextTokens.Clear();
+        
+        // Generate actual next tokens using the victim's Random instance
+        for (int i = 0; i < 10; i++)
+        {
+            var actualNumber = victimRandom.Next(100000, 999999);
+            actualNextTokens.Add($"RESET-{actualNumber}");
+        }
+        
+        // Calculate success rate
+        matchedTokens = 0;
+        totalComparedTokens = Math.Min(predictedTokens.Count, actualNextTokens.Count);
+        
+        for (int i = 0; i < totalComparedTokens; i++)
+        {
+            if (predictedTokens[i] == actualNextTokens[i])
+            {
+                matchedTokens++;
+            }
+        }
+        
+        attackSuccessRate = totalComparedTokens > 0 
+            ? (matchedTokens * 100) / totalComparedTokens 
+            : 0;
+    }
+}

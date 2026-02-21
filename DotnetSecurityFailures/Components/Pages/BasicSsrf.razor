@@ -1,0 +1,331 @@
+@page "/vulnerabilities/ssrf"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject HttpClient HttpClient
+
+<PageTitle>Basic SSRF - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="ssrf" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="mb-3">
+            <label class="form-label">URL:</label>
+            <input type="text" class="form-control" @bind="url" placeholder="https://example.com" />
+        </div>
+
+        <button class="btn btn-primary" @onclick="FetchUrl">
+            Fetch URL
+        </button>
+
+        <div class="alert alert-secondary mt-3">
+            <strong>Configuration:</strong><br/>
+            <small>
+                • Main app: <code>https://localhost:7124</code><br/>
+                • Internal admin: <code>http://localhost:5003</code> (SSRF target)<br/>
+                • Target endpoint: <code>/api/vulnerabilities/ssrf/fetch</code><br/>
+                • URL Validation: <code>DISABLED</code><br/>
+                • IP Filtering: <code>DISABLED</code><br/>
+                • Redirect Following: <code>ENABLED</code>
+            </small>
+        </div>
+
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(requestedUrl))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Requested URL:</strong>
+                <pre class="mb-0 mt-2 small">@requestedUrl</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(responseContent))
+        {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>Response Content:</strong>
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.85em; max-height: 200px; overflow-y: auto;">@responseContent</pre>
+                </div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these attacks:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetUrl("http://localhost:5003")'>http://localhost:5003</code>
+                    - access internal admin panel (credentials, secrets, network map)
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetUrl("http://127.0.0.1:5003")'>http://127.0.0.1:5003</code>
+                    - same as above, different notation
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Server-Side Request Forgery (SSRF)</strong> allows attackers to make the server 
+            send HTTP requests to arbitrary destinations, bypassing firewalls and accessing internal resources.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Application fetches external URLs
+2. Attacker provides internal URL:
+   GET /api/ssrf/fetch?url=http://localhost:5003
+3. Server makes request to localhost:5003 (internal admin)
+4. Server returns sensitive data from admin panel
+
+Result: Access to credentials, AWS keys, database info!</code></pre>
+
+        <h6 class="mt-4">Real-world attack scenarios:</h6>
+        <ul>
+            <li><strong>Internal admin panels:</strong> Access localhost:5003 with secrets</li>
+            <li><strong>Cloud metadata:</strong> AWS (169.254.169.254), Azure, GCP credentials</li>
+            <li><strong>Internal APIs:</strong> Bypass authentication via localhost</li>
+            <li><strong>Port scanning:</strong> Enumerate internal network topology</li>
+            <li><strong>Database access:</strong> Read from internal database servers</li>
+        </ul>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Internal reconnaissance:</strong> Scan ports and services</li>
+            <li><strong>Cloud credentials:</strong> Access AWS/Azure metadata endpoints</li>
+            <li><strong>Bypass authentication:</strong> Access admin panels via localhost</li>
+            <li><strong>Data exfiltration:</strong> Read internal APIs and databases</li>
+            <li><strong>Network mapping:</strong> Discover internal infrastructure</li>
+        </ul>
+    </ExplanationContent>
+
+    <PreventionContent>
+        <h5>Protection Against SSRF:</h5>
+        <ol>
+            <li><strong>Use allowlist:</strong> Only permit specific, trusted domains</li>
+            <li><strong>Block private IPs:</strong> Validate against 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16</li>
+            <li><strong>Disable redirects:</strong> Set AllowAutoRedirect = false</li>
+            <li><strong>Protocol validation:</strong> Only allow http/https, block file://, gopher://, ftp://</li>
+            <li><strong>Resolve DNS first:</strong> Check resolved IP before making request</li>
+            <li><strong>Network segmentation:</strong> Isolate web servers from internal networks</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+
+    private Vulnerability? vulnerability;
+    private string url = "";
+    private string result = "";
+    private string requestedUrl = "";
+    private string responseContent = "";
+    private string resultCssClass = "";
+
+    private const string VulnerableCode = """
+// VULNERABLE: No URL validation
+[HttpGet("api/ssrf/fetch")]
+public async Task<IActionResult> FetchUrl([FromQuery] string url)
+{
+    using var client = new HttpClient();
+    
+    // DANGEROUS: Fetches ANY URL without validation!
+    var response = await client.GetAsync(url);
+    var content = await response.Content.ReadAsStringAsync();
+    
+    return Ok(new { content });
+}
+
+// Attacker can access:
+// http://localhost/admin → Internal admin panel
+// http://169.254.169.254/latest/meta-data/
+//   → AWS credentials!
+// http://192.168.1.5:3306 → Internal MySQL database
+""";
+
+    private const string SafeCode = """
+[HttpGet("api/ssrf/fetch")]
+public async Task<IActionResult> FetchUrlSafely([FromQuery] string url)
+{
+    // Parse absolute URL
+    if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        return BadRequest("Invalid URL");
+
+    // Allow only HTTP/S
+    if (uri.Scheme != Uri.UriSchemeHttp &&
+        uri.Scheme != Uri.UriSchemeHttps)
+        return BadRequest("Only HTTP/HTTPS allowed");
+
+    // Domain allowlist (strongest SSRF protection)
+    var allowedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "example.com",
+        "api.trusted.com"
+    };
+
+    if (!allowedHosts.Contains(uri.Host))
+        return BadRequest("Host not allowed");
+
+    // Resolve DNS once
+    IPAddress[] addresses;
+    try
+    {
+        addresses = await Dns.GetHostAddressesAsync(uri.Host);
+    }
+    catch
+    {
+        return BadRequest("DNS resolution failed");
+    }
+
+    // Pick first safe IP
+    var targetIp = addresses.FirstOrDefault(ip => !IsForbiddenIp(ip));
+    if (targetIp == null)
+        return BadRequest("No safe IP address found");
+
+    // Pin IP to prevent DNS rebinding
+    var handler = new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            var socket = new Socket(
+                targetIp.AddressFamily,
+                SocketType.Stream,
+                ProtocolType.Tcp);
+
+            await socket.ConnectAsync(
+                new IPEndPoint(targetIp, context.DnsEndPoint.Port),
+                cancellationToken);
+
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+    };
+
+    using var client = new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(5)
+    };
+
+    // Execute request
+    using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+
+    return Ok(new
+    {
+        status = "success",
+        statusCode = (int)response.StatusCode,
+        resolvedIp = targetIp.ToString()
+    });
+}
+
+private static bool IsForbiddenIp(IPAddress ip)
+{
+    // Block loopback
+    if (IPAddress.IsLoopback(ip))
+        return true;
+
+    // IPv4 checks
+    if (ip.AddressFamily == AddressFamily.InterNetwork)
+    {
+        var b = ip.GetAddressBytes();
+        return
+            b[0] == 10 ||                              // 10.0.0.0/8
+            (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || // 172.16.0.0/12
+            (b[0] == 192 && b[1] == 168) ||             // 192.168.0.0/16
+            (b[0] == 169 && b[1] == 254) ||             // Link-local
+            b[0] == 0;                                  // 0.0.0.0/8
+    }
+
+    // IPv6 checks
+    if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+    {
+        return
+            ip.IsIPv6LinkLocal ||
+            ip.IsIPv6Multicast ||
+            ip.IsIPv6SiteLocal ||
+            ip.IsIPv6UniqueLocal;
+    }
+
+    // Block unknown families
+    return true;
+}
+""";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("ssrf")
+            ?? throw new InvalidOperationException($"Vulnerability not found: ssrf");
+    }
+
+    private async Task FetchUrl()
+    {
+        result = "";
+        requestedUrl = "";
+        responseContent = "";
+        resultCssClass = "";
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            result = "Please enter a URL";
+            resultCssClass = "alert alert-warning";
+            return;
+        }
+
+        try
+        {
+            var response = await HttpClient.GetFromJsonAsync<FetchResponse>(
+                $"/api/vulnerabilities/ssrf/fetch?url={Uri.EscapeDataString(url)}"
+            );
+
+            if (response?.Success == true)
+            {
+                requestedUrl = response.Url;
+                responseContent = response.Content ?? response.Error ?? "";
+
+                if (response.IsVulnerable)
+                {
+                    resultCssClass = "alert alert-danger";
+                    result = "SSRF VULNERABILITY DETECTED!\n\n" +
+                            "The server made a request to an internal/private address!\n" +
+                            "Attackers can access internal services, cloud metadata, and bypass firewalls.";
+                }
+                else
+                {
+                    resultCssClass = "alert alert-success";
+                    result = $"URL fetched successfully: {url}";
+                }
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            resultCssClass = "alert alert-warning";
+            result = $"Request failed (try to use a local IP available from your machine): {ex.Message}";
+        }
+    }
+
+    private void SetUrl(string payload)
+    {
+        url = payload;
+        result = "";
+        requestedUrl = "";
+        responseContent = "";
+        resultCssClass = "";
+    }
+
+    private class FetchResponse
+    {
+        public bool Success { get; set; }
+        public string Url { get; set; } = "";
+        public int StatusCode { get; set; }
+        public string? ContentType { get; set; }
+        public string? Content { get; set; }
+        public string? Error { get; set; }
+        public bool IsVulnerable { get; set; }
+    }
+}

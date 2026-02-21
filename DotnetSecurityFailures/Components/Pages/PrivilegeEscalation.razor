@@ -1,0 +1,233 @@
+@page "/vulnerabilities/privilege-escalation"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Privilege Escalation - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="privilege-escalation" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>User Registration System:</h6>
+        <p class="small text-muted">Register a new user account</p>
+
+        <div class="mb-3">
+            <label class="form-label">Username:</label>
+            <input type="text" class="form-control" @bind="username" placeholder="john.doe" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Password:</label>
+            <input type="password" class="form-control" @bind="password" placeholder="Password123!" />
+        </div>
+
+        <button class="btn btn-primary w-100 mb-2" @onclick="NormalRegister" disabled="@isLoading">
+            @(isLoading ? "Registering..." : "Normal Registration")
+        </button>
+
+        <button class="btn btn-danger w-100" @onclick="ExploitRegister" disabled="@isLoading">
+            Exploit: Register with Admin Role
+        </button>
+
+        @if (!string.IsNullOrEmpty(result)) {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Attack Simulation:</strong>
+            <p class="mb-2">The "Exploit" button simulates what an attacker would do using browser DevTools, Burp Suite, or direct API calls - sending additional parameters not visible in the UI.</p>
+            <strong>Example curl command with role injection:</strong>
+            <pre class="mb-2 mt-2 bg-dark text-light p-2"><code>curl -X POST @NavigationManager.BaseUri/api/user/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "hacker",
+    "email": "hack@evil.com",
+    "password": "Pass123!",
+    "role": "Admin"
+  }'</code></pre>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Privilege escalation occurs when an application accepts sensitive parameters
+            (like role, permissions, or admin flags) directly from user input without
+            server-side validation. Attackers can modify HTTP requests to inject privileged
+            roles during registration or profile updates.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker opens browser DevTools (F12) ? Network tab
+
+2. Fills registration form normally
+
+3. Before submitting, intercepts the request
+
+4. Adds hidden parameter:
+   {
+     "username": "hacker",
+     "password": "pass123",
+     "role": "Admin"  // Injected by attacker!
+   }
+
+5. Server accepts role without validation
+
+6. Attacker now has admin privileges!</code></pre>
+
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Unauthorized admin access</strong> - any user becomes administrator</li>
+            <li><strong>Complete system compromise</strong> - admin privileges = full control</li>
+            <li><strong>Data breach</strong> - access to all user data</li>
+            <li><strong>Backdoor creation</strong> - create multiple admin accounts</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Privilege Escalation:</h5>
+        <ol>
+            <li><strong>Never trust client input</strong> - Don't accept role/permissions from user requests</li>
+            <li><strong>Server-side assignment</strong> - Always assign roles server-side with default values</li>
+            <li><strong>Separate admin APIs</strong> - Role changes should be in protected admin endpoints only</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Never accept role from user input
+public class RegistrationRequest
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+    // No Role property
+}
+
+[HttpPost(\"register\]
+public IActionResult Register(RegistrationRequest req)
+{
+    var user = new User
+    {
+        Username = req.Username,
+        Role = \"User\", // Hardcoded default
+        CreatedAt = DateTime.UtcNow
+    };
+    _context.Users.Add(user);
+    return Ok();
+}
+
+// Separate admin endpoint
+[Authorize(Roles = \"SuperAdmin\]
+[HttpPost(\"promote-user\]
+public IActionResult PromoteUser(int userId, string newRole)
+{
+    var user = _context.Users.Find(userId);
+    user.Role = newRole;
+    _auditLog.Log($\"Role changed: {userId} -> {newRole}\;
+    return Ok();
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Accepting role from user input
+public class RegistrationRequest
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string? Role { get; set; } // User-controlled!
+}
+
+[HttpPost(\"register\]
+public IActionResult Register(RegistrationRequest req)
+{
+    var user = new User
+    {
+        Username = req.Username,
+        Role = req.Role ?? \"User\" // VULNERABILITY!
+    };
+    _context.Users.Add(user);
+    return Ok();
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string username = "";
+    private string password = "";
+    private string result = "";
+    private string resultCssClass = "";
+    private bool isLoading;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("privilege-escalation")
+            ?? throw new InvalidOperationException($"Vulnerability not found: privilege-escalation");
+    }
+
+    private async Task NormalRegister() {
+        await RegisterUser(includeRoleExploit: false);
+    }
+
+    private async Task ExploitRegister() {
+        await RegisterUser(includeRoleExploit: true);
+    }
+
+    private async Task RegisterUser(bool includeRoleExploit) {
+        if (!ValidateInput()) return;
+
+        isLoading = true;
+        result = "";
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        object request = includeRoleExploit
+            ? new { username, email = $"{username}@example.com", password, role = "Admin" }
+            : new { username, email = $"{username}@example.com", password };
+
+        var response = await httpClient.PostAsJsonAsync("api/user/register", request);
+        var responseData = await response.Content.ReadFromJsonAsync<RegistrationResponse>();
+
+        if (includeRoleExploit) {
+            resultCssClass = "alert alert-danger";
+            result = $"PRIVILEGE ESCALATION VULNERABILITY EXPLOITED!\n\n" +
+                     $"Welcome {responseData?.Username}!\n" +
+                     $"You registered as: {responseData?.Role}\n\n" +
+                     $"Account Details:\n" +
+                     $"- User ID: {responseData?.UserId}\n" +
+                     $"- Privileged: {(responseData?.IsPrivileged == true ? "YES" : "NO")}\n\n" +
+                     $"CRITICAL VULNERABILITY!\n" +
+                     $"You gained '{responseData?.Role}' privileges by adding a 'role' " +
+                     $"parameter to the API request!";
+        } else {
+            resultCssClass = "alert alert-success";
+            result = $"Registration Successful!\n\n" +
+                     $"Welcome {responseData?.Username}!\n" +
+                     $"You registered as: {responseData?.Role}\n\n" +
+                     $"User ID: {responseData?.UserId}\n\n" +
+                     "You were assigned the default 'User' role as expected.";
+        }
+
+        isLoading = false;
+    }
+
+    private bool ValidateInput() {
+        if (string.IsNullOrWhiteSpace(username) ||
+            string.IsNullOrWhiteSpace(password)) {
+            resultCssClass = "alert alert-warning";
+            result = "Please fill in all fields";
+            return false;
+        }
+        return true;
+    }
+
+    private class RegistrationResponse {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+        public int UserId { get; set; }
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Role { get; set; } = "";
+        public bool IsPrivileged { get; set; }
+    }
+}

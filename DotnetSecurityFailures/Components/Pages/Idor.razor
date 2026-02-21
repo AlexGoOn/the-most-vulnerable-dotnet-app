@@ -1,0 +1,310 @@
+@page "/vulnerabilities/idor"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>IDOR (Insecure Direct Object Reference) - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="idor" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>View User Profile:</h6>
+        <p class="small">You are logged in as <strong>User #5 (John Doe)</strong></p>
+        
+        <div class="mb-3">
+            <label for="userId" class="form-label">User ID to view:</label>
+            <input type="number" 
+                   class="form-control" 
+                   id="userId" 
+                   @bind="userId" 
+                   placeholder="Enter user ID (1-5)" />
+        </div>
+        
+        <button class="btn btn-primary" @onclick="ViewProfile" disabled="@isLoading">
+            @(isLoading ? "Loading..." : "View Profile")
+        </button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(profileData))
+        {
+            <div class="@profileCssClass mt-3">
+                <strong>Profile Data:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@profileData</pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these attacks:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer; color: #0d6efd;" 
+                              @onclick="() => SetAttack(attack)">
+                            @attack.GetInputAsString()
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            IDOR occurs when an application uses user-supplied input (like an ID in the URL 
+            or form field) to access an object, without verifying that the current user has 
+            permission to access that specific object.
+        </p>
+        
+        <h6 class="mt-3">Attack Scenario:</h6>
+        <pre class="bg-light p-2 small">
+<code>1. User #5 logs in to view their profile
+   URL: /api/user/profile/5
+
+2. Attacker changes ID in URL to 1
+   URL: /api/user/profile/1
+   
+3. Server fails to verify ownership
+   Returns admin's sensitive data
+   
+4. Attacker accesses:
+   - Administrator credentials
+   - Other users' personal data
+   - Financial and medical records</code>
+        </pre>
+
+        <h6 class="mt-4">Common IDOR Patterns:</h6>
+        <ul>
+            <li><code>/user/profile?id=123</code> - profile access</li>
+            <li><code>/api/invoices/456</code> - document access</li>
+            <li><code>/download?file=contract_789.pdf</code> - file access</li>
+            <li><code>/delete-account/555</code> - delete operations</li>
+        </ul>
+        
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Privacy breach</strong> - Access to other users' private data</li>
+            <li><strong>Financial theft</strong> - Credit card and banking information exposure</li>
+            <li><strong>Medical records</strong> - HIPAA violations</li>
+            <li><strong>Data manipulation</strong> - Unauthorized modification/deletion</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against IDOR:</h5>
+        <ol>
+            <li>
+                <strong>Verify ownership:</strong> Always check if the current user 
+                owns the requested resource before returning data
+            </li>
+            <li>
+                <strong>Use indirect references:</strong> Instead of exposing database IDs, 
+                use session-based references or user-specific tokens
+            </li>
+            <li>
+                <strong>Implement authorization:</strong> Use ASP.NET Core's 
+                <code>IAuthorizationService</code> for resource-based authorization
+            </li>
+            <li>
+                <strong>Use UUIDs:</strong> Replace sequential integer IDs with 
+                non-sequential, hard-to-guess GUIDs
+            </li>
+            <li>
+                <strong>Context-based access:</strong> Get data based on authenticated 
+                user context, not URL parameters: <code>/api/user/profile</code> instead of 
+                <code>/api/user/profile/{id}</code>
+            </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// Verify ownership
+[Authorize]
+[HttpGet("/api/user/profile/{id}]
+public IActionResult GetProfile(int id)
+{
+    var currentUserId = User.FindFirst(
+        ClaimTypes.NameIdentifier).Value;
+    
+    // Verify user can only access their own data
+    if (id.ToString() != currentUserId)
+    {
+        return Forbid(); // HTTP 403
+    }
+    
+    var user = dbContext.Users
+        .Where(u => u.Id == id)
+        .Select(u => new { u.Id, u.Email })
+        .FirstOrDefault();
+    
+    return Ok(user);
+}
+
+// Don't expose IDs at all
+[Authorize]
+[HttpGet("/api/user/profile]
+public IActionResult GetMyProfile()
+{
+    var userId = User.FindFirst(
+        ClaimTypes.NameIdentifier).Value;
+    var user = dbContext.Users
+        .Find(int.Parse(userId));
+    return Ok(user);
+}
+
+// Use resource-based authorization
+[Authorize]
+[HttpGet("/api/user/profile/{id}]
+public async Task<IActionResult> GetProfile(int id)
+{
+    var user = await dbContext.Users
+        .FindAsync(id);
+    
+    if (user == null)
+        return NotFound();
+    
+    var authResult = await _authorizationService
+        .AuthorizeAsync(User, user, "ViewProfile;
+    
+    if (!authResult.Succeeded)
+        return Forbid();
+    
+    return Ok(user);
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: No ownership verification
+[HttpGet("/api/user/profile/{id}]
+public IActionResult GetProfile(int id)
+{
+    var user = dbContext.Users
+        .Where(u => u.Id == id)
+        .Select(u => new 
+        { 
+            u.Id, 
+            u.Email, 
+            u.SSN, 
+            u.CreditCard 
+        })
+        .FirstOrDefault();
+    
+    // VULNERABILITY: No check if current user 
+    // can access this ID!
+    return Ok(user);
+}
+
+// Also vulnerable:
+var userId = Request.Query["userId"];
+var data = GetUserData(userId); 
+// No authorization check!
+""";
+
+    private Vulnerability? vulnerability;
+    private int userId = 5;
+    private bool isLoading = false;
+    private string? profileData;
+    private string? profileCssClass;
+    private string? errorMessage;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("idor")
+            ?? throw new InvalidOperationException($"Vulnerability not found: idor");
+    }
+
+    private async Task ViewProfile()
+    {
+        ClearResults();
+
+        isLoading = true;
+
+        try
+        {
+            var baseUrl = Navigation.BaseUri.TrimEnd('/');
+            var response = await Http.GetAsync($"{baseUrl}/api/user/profile/{userId}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ProfileResponse>();
+                if (result?.Success == true && result.Data != null)
+                {
+                    profileCssClass = result.Authorized ? "alert alert-success" : "alert alert-warning";
+                    profileData = System.Text.Json.JsonSerializer.Serialize(
+                        result.Data, 
+                        new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+                    AnalyzeAttack(result.Authorized);
+                }
+            }
+            else
+            {
+                errorMessage = $"Request failed: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void AnalyzeAttack(bool authorized)
+    {
+        var predefinedAttack = vulnerability!.PredefinedAttacks
+            .FirstOrDefault(a => a.GetInputAsInt() == userId);
+        
+        if (predefinedAttack != null)
+        {
+            attackAnalysis = predefinedAttack.Description;
+        }
+        else
+        {
+            attackAnalysis = authorized 
+                ? "Authorized access to your own profile." 
+                : "User not found or access denied.";
+        }
+    }
+
+    private void SetAttack(PredefinedAttack attack)
+    {
+        userId = attack.GetInputAsInt();
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        profileData = null;
+        profileCssClass = null;
+        errorMessage = null;
+        attackAnalysis = null;
+    }
+
+    private class ProfileResponse
+    {
+        public bool Success { get; set; }
+        public bool Authorized { get; set; }
+        public object? Data { get; set; }
+    }
+}

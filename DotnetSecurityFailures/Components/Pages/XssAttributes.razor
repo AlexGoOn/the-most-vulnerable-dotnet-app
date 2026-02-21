@@ -1,0 +1,274 @@
+@page "/vulnerabilities/xss-attributes"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@using Microsoft.AspNetCore.Components
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XSS via Attributes - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xss-attributes" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>1. XSS via @@attributes directive:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" 
+                   class="form-control" 
+                   @bind="tooltipInput" 
+                   placeholder="Enter tooltip text" />
+            <button class="btn btn-primary" @onclick="RenderTooltip">Render Tooltip</button>
+        </div>
+        
+        @if (showTooltipDemo)
+        {
+            <div class="alert alert-warning">
+                @((MarkupString)tooltipHtml)
+            </div>
+        }
+
+        <h6 class="mt-4">2. XSS via href attribute:</h6>
+        
+        <div class="input-group mb-3">
+            <input type="text" 
+                   class="form-control" 
+                   @bind="linkInput" 
+                   placeholder="Enter link URL" />
+            <button class="btn btn-primary" @onclick="RenderLink">Render Link</button>
+        </div>
+        
+        @if (showLinkDemo)
+        {
+            <div class="alert alert-warning">
+                @((MarkupString)linkHtml)
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks.Where(a => a.GetInput2AsString() == "Tooltip"))
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetTooltip(attack.GetInputAsString())">
+                            @attack.Input
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+                @foreach (var attack in vulnerability.PredefinedAttacks.Where(a => a.GetInput2AsString() == "Link"))
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetLink(attack.GetInputAsString())">
+                            @attack.Input
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            XSS via attributes occurs when user input controls HTML attributes without proper sanitization.
+            Two common attack vectors are demonstrated here.
+        </p>
+        
+        <h6 class="mt-3">Attack Vector 1: @@attributes directive</h6>
+        <pre class="bg-light p-2 small"><code>User input: " onmouseover="alert('XSS')" x="
+
+Code:
+var html = $"&lt;div title=\"{userInput}\"&gt;Hover me&lt;/div&gt;";
+
+Result:
+&lt;div title="" onmouseover="alert('XSS')" x=""&gt;Hover me&lt;/div&gt;
+
+JavaScript executes on mouseover event!</code></pre>
+
+        <h6 class="mt-3">Attack Vector 2: javascript: protocol</h6>
+        <pre class="bg-light p-2 small"><code>User input: javascript:alert('XSS')
+
+Code:
+var html = $"&lt;a href=\"{userInput}\"&gt;Click me&lt;/a&gt;";
+
+Result:
+&lt;a href="javascript:alert('XSS')"&gt;Click me&lt;/a&gt;
+
+JavaScript executes when link is clicked!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Session hijacking</strong> - steal cookies and authentication tokens</li>
+            <li><strong>Credential theft</strong> - capture user input from forms</li>
+            <li><strong>Phishing</strong> - redirect to fake login pages</li>
+            <li><strong>Malware distribution</strong> - trigger drive-by downloads</li>
+            <li><strong>Account takeover</strong> - perform actions as the victim user</li>
+            <li><strong>Data exfiltration</strong> - send sensitive page data to attacker</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against XSS via Attributes:</h5>
+        <ol>
+            <li>
+                <strong>Don't use MarkupString with user input</strong> - 
+                avoid bypassing Blazor's automatic HTML encoding
+            </li>
+            <li>
+                <strong>Content Security Policy (CSP)</strong> - 
+                set headers to block inline JavaScript execution
+            </li>
+            <li>
+                <strong>Avoid event handler attributes</strong> - 
+                use Blazor's @@onclick instead of dynamic attributes
+            </li>
+            <li>
+                <strong>Input validation</strong> - 
+                sanitize and validate all user input before rendering
+            </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private Vulnerability? vulnerability;
+    private string tooltipInput = "";
+    private string linkInput = "";
+    private string tooltipHtml = "";
+    private string linkHtml = "";
+    private bool showTooltipDemo;
+    private bool showLinkDemo;
+    private string? attackAnalysis;
+
+    private const string VulnerableCode = """
+// DANGEROUS: User input in attributes via MarkupString
+var html = $"<div title=\"{userInput}\">Hover me</div>";
+content = (MarkupString)html;
+// Attack: " onmouseover="alert('XSS')" x="
+// Result: <div title="" onmouseover="alert('XSS')" x="">
+// XSS when hovering!
+
+@code {
+    MarkupString content;
+    string userInput = "\" onmouseover=\"alert('XSS')\" x=\"";
+}
+
+// DANGEROUS: User input in href via MarkupString
+var html = $"<a href=\"{userInput}\">Click me</a>";
+content = (MarkupString)html;
+// Attack: javascript:alert('XSS')
+// Result: <a href="javascript:alert('XSS')">Click me</a>
+// XSS when clicking!
+
+@code {
+    string userInput = "javascript:alert('XSS')";
+}
+""";
+
+    private const string SafeCode = """
+// SAFE: Use Blazor's automatic encoding
+<div title="@userInput">
+    Hover me
+</div>
+
+@code {
+    string userInput = "\" onmouseover=\"alert('XSS')\" x=\"";
+    // Blazor escapes @ bindings - safe in attributes
+    // Result: <div title="&quot; onmouseover=&quot;alert('XSS')&quot; x=&quot;">
+}
+
+// SAFE: Validate URL protocol
+<a href="@GetSafeUrl(userInput)">Click me</a>
+
+@code {
+    string GetSafeUrl(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            if (uri.Scheme == "http" || uri.Scheme == "https")
+                return url;
+        }
+        return "#";  // Invalid URL
+    }
+}
+""";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xss-attributes")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xss-attributes");
+    }
+
+    private void RenderTooltip()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(tooltipInput))
+        {
+            attackAnalysis = "Please enter tooltip text";
+            return;
+        }
+
+        // VULNERABLE: User input directly in HTML string without sanitization
+        tooltipHtml = $@"<div title=""{tooltipInput}"" style=""display:inline-block; padding:10px; border:1px solid #ccc; background:#f8f9fa; cursor:pointer;"">
+                    Hover over me
+                </div>";
+
+        showTooltipDemo = true;
+
+        var predefinedAttack = vulnerability!.PredefinedAttacks
+            .FirstOrDefault(a => a.GetInputAsString() == tooltipInput);
+        
+        attackAnalysis = predefinedAttack?.Description ?? 
+                        "Custom tooltip rendered. Hover over the element to trigger any injected code.";
+    }
+
+    private void RenderLink()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(linkInput))
+        {
+            attackAnalysis = "Please enter link URL";
+            return;
+        }
+
+        // VULNERABLE: User input directly in href without protocol validation
+        linkHtml = $@"<a href=""{linkInput}"" style=""font-size:1.1em;"">Click this link</a>";
+
+        showLinkDemo = true;
+
+        var predefinedAttack = vulnerability!.PredefinedAttacks
+            .FirstOrDefault(a => a.GetInputAsString() == linkInput);
+        
+        attackAnalysis = predefinedAttack?.Description ?? 
+                        "Custom link rendered. Click the link to trigger any injected code.";
+    }
+
+    private void SetTooltip(string input)
+    {
+        tooltipInput = input;
+        ClearResults();
+    }
+
+    private void SetLink(string input)
+    {
+        linkInput = input;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        showTooltipDemo = false;
+        showLinkDemo = false;
+        tooltipHtml = "";
+        linkHtml = "";
+        attackAnalysis = null;
+    }
+}

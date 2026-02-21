@@ -1,0 +1,226 @@
+@page "/vulnerabilities/xml-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerableXMLService XmlService
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XML Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xml-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>User Profile Update:</h6>
+        <div class="mb-3">
+            <label class="form-label">Full Name:</label>
+            <input type="text" class="form-control" @bind="fullName" 
+                   placeholder="John Doe" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Email:</label>
+            <input type="email" class="form-control" @bind="email" 
+                   placeholder="john@example.com" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Bio:</label>
+            <textarea class="form-control" @bind="bio" rows="3" 
+                      placeholder="Brief biography"></textarea>
+        </div>
+        <button class="btn btn-primary" @onclick="SaveProfile">Save Profile</button>
+
+        @if (!string.IsNullOrEmpty(generatedXml))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Generated XML:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap; word-wrap: break-word;"><code>@generatedXml</code></pre>
+            </div>
+        }
+
+        @if (parseResult != null && parseResult.Success)
+        {
+            <div class="alert @(parseResult.InjectionDetected ? "alert-danger" : "alert-info") mt-3" style="white-space: pre-wrap; word-wrap: break-word;">
+                <strong>@(parseResult.InjectionDetected ? "VULNERABILITY EXPLOITED!" : "Parsing Result:")</strong>
+                <div class="mt-2">@parseResult.Analysis</div>
+            </div>
+        }
+
+        @if (parseResult != null && !parseResult.Success)
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Error:</strong>
+                <pre class="mb-0 mt-2">@parseResult.ErrorMessage</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                <li>Name: <code style="cursor: pointer;" @onclick="@(() => SetName("</name><role>admin</role><name>"))">&lt;/name&gt;&lt;role&gt;admin&lt;/role&gt;&lt;name&gt;</code> - inject admin role</li>
+                <li>Email: <code style="cursor: pointer;" @onclick="@(() => SetEmail("</email><balance>999999</balance><email>"))">&lt;/email&gt;&lt;balance&gt;999999&lt;/balance&gt;&lt;email&gt;</code> - inject balance</li>
+                <li>Bio: <code style="cursor: pointer;" @onclick="@(() => SetBio("</bio><isAdmin>true</isAdmin><bio>"))">&lt;/bio&gt;&lt;isAdmin&gt;true&lt;/isAdmin&gt;&lt;bio&gt;</code> - inject admin flag</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>The code builds XML documents by concatenating user input into strings. This allows attackers to inject XML tags to modify document structure and add unauthorized elements.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: name = &lt;/name&gt;&lt;role&gt;admin&lt;/role&gt;&lt;name&gt;
+
+XML becomes:
+&lt;user&gt;
+  &lt;name&gt;&lt;/name&gt;&lt;role&gt;admin&lt;/role&gt;&lt;name&gt;&lt;/name&gt;
+  &lt;email&gt;user@@example.com&lt;/email&gt;
+  &lt;role&gt;user&lt;/role&gt;
+&lt;/user&gt;
+
+Result: Injected &lt;role&gt;admin&lt;/role&gt; before legitimate role tag!</code></pre>
+
+        <h6 class="mt-3">Why this is dangerous:</h6>
+        <pre class="bg-light p-2 small"><code>Normal XML:
+&lt;user&gt;
+  &lt;name&gt;John Doe&lt;/name&gt;
+  &lt;role&gt;user&lt;/role&gt;
+&lt;/user&gt;
+
+Injected XML:
+&lt;user&gt;
+  &lt;name&gt;&lt;/name&gt;&lt;role&gt;admin&lt;/role&gt;&lt;name&gt;&lt;/name&gt;
+  &lt;role&gt;user&lt;/role&gt;
+&lt;/user&gt;
+
+Parser may use first &lt;role&gt; tag found (admin)!</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Privilege escalation</strong> - inject admin role, elevated permissions</li>
+            <li><strong>Data manipulation</strong> - modify prices, balances, account status</li>
+            <li><strong>Authentication bypass</strong> - inject authentication tokens or flags</li>
+            <li><strong>Business logic corruption</strong> - alter order details, payment amounts</li>
+            <li><strong>XML External Entity (XXE)</strong> - combined with XXE for file disclosure</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against XML Injection:</h5>
+        <ol>
+            <li><strong>Use XML APIs</strong> -  XElement, XmlDocument API, not string concatenation</li>
+            <li><strong>Automatic escaping</strong> - XML libraries automatically escape special characters</li>
+            <li><strong>Input validation</strong> - validate and reject XML special characters if needed</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Use XElement or XmlDocument API
+var xml = new XElement(\"user\",
+    new XElement(\"name\", fullName),      // Automatically escaped
+    new XElement(\"email\", email),
+    new XElement(\"bio\", bio),
+    new XElement(\"role\", \"user\
+);
+
+// Input: fullName = \"</name><role>admin</role><name>\"
+// XElement escapes to:
+// <name></name><role>admin</role><name></name>
+// Tags are escaped, treated as literal text - attack prevented!
+
+// Alternative: XmlDocument with proper API
+XmlDocument doc = new XmlDocument();
+XmlElement userElement = doc.CreateElement(\"user\;
+
+XmlElement nameElement = doc.CreateElement(\"name\;
+nameElement.InnerText = fullName;  // Auto-escaped
+userElement.AppendChild(nameElement);
+
+XmlElement emailElement = doc.CreateElement(\"email\;
+emailElement.InnerText = email;
+userElement.AppendChild(emailElement);
+
+XmlElement roleElement = doc.CreateElement(\"role\;
+roleElement.InnerText = \"user\";  // Always \"user\"
+userElement.AppendChild(roleElement);
+
+doc.AppendChild(userElement);
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: String concatenation in XML
+string xml = $@\"<user>
+  <name>{fullName}</name>
+  <email>{email}</email>
+  <bio>{bio}</bio>
+  <role>user</role>
+</user>\"; 
+
+XmlDocument doc = new XmlDocument();
+doc.LoadXml(xml);
+
+// Extract role from parsed XML
+var roleNode = doc.SelectSingleNode(\"//role\;
+string userRole = roleNode?.InnerText; // Gets injected value!
+
+// Input: fullName = \"</name><role>admin</role><name>\"
+// Resulting XML:
+// <user>
+//   <name></name><role>admin</role><name></name>
+//   <email>user@example.com</email>
+//   <role>user</role>
+// </user>
+// userRole = \"admin\" (first node found) - privilege escalation!
+""";
+
+    private Vulnerability? vulnerability;
+    private string fullName = "";
+    private string email = "";
+    private string bio = "";
+    private string? generatedXml;
+    private XmlParseResult? parseResult;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xml-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xml-injection");
+    }
+
+    private void SaveProfile()
+    {
+        generatedXml = null;
+        parseResult = null;
+
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            parseResult = new XmlParseResult
+            {
+                Success = false,
+                ErrorMessage = "Please enter a name"
+            };
+            return;
+        }
+
+        // Show the XML that will be generated
+        generatedXml = XmlService.GetGeneratedXml(fullName, email, bio);
+
+        // Execute vulnerable XML generation and parsing
+        parseResult = XmlService.SaveProfileVulnerable(fullName, email, bio);
+    }
+
+    private void SetName(string value)
+    {
+        fullName = value;
+        generatedXml = null;
+        parseResult = null;
+    }
+
+    private void SetEmail(string value)
+    {
+        email = value;
+        generatedXml = null;
+        parseResult = null;
+    }
+
+    private void SetBio(string value)
+    {
+        bio = value;
+        generatedXml = null;
+        parseResult = null;
+    }
+}

@@ -1,0 +1,296 @@
+@page "/vulnerabilities/ecb-mode"
+@rendermode InteractiveServer
+@using System.Security.Cryptography
+@using System.Text
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>ECB Mode Encryption - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="ecb-mode" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Encrypt Text to See Pattern Leakage:</h6>
+        <p class="small text-muted">Enter repeated text to demonstrate how ECB mode reveals patterns</p>
+
+        <div class="mb-3">
+            <label class="form-label">Plaintext Message:</label>
+            <textarea class="form-control" rows="3" @bind="plaintext" placeholder="Enter text with repeated patterns..."></textarea>
+        </div>
+
+        <div class="d-grid gap-2">
+            <button class="btn btn-danger" @onclick="EncryptECB">
+                Encrypt with ECB Mode (Vulnerable)
+            </button>
+            <button class="btn btn-success" @onclick="EncryptCBC">
+                Encrypt with CBC Mode (Secure)
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ecbResult))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>ECB Mode Result (VULNERABLE):</strong>
+                
+                <div class="mt-2">
+                    <strong>Plaintext Blocks (16 bytes each):</strong>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        @foreach (var block in plaintextBlocks)
+                        {
+                            <div class="badge bg-secondary" style="font-family: monospace; font-size: 0.7em;">
+                                @block
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="mt-2">
+                    <strong>Ciphertext Blocks (16 bytes each):</strong>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        @foreach (var block in ecbBlocks)
+                        {
+                            <div class="badge" style="background-color: @GetBlockColor(block); font-family: monospace; font-size: 0.7em;">
+                                @block
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <p class="mt-2 mb-0 text-danger"><strong>Notice:</strong> Identical plaintext blocks produce identical ciphertext blocks (same colors)!</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(cbcResult))
+        {
+            <div class="alert alert-success mt-3">
+                <strong>CBC Mode Result (SECURE):</strong>
+                
+                <div class="mt-2">
+                    <strong>Plaintext Blocks (16 bytes each):</strong>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        @foreach (var block in plaintextBlocks)
+                        {
+                            <div class="badge bg-secondary" style="font-family: monospace; font-size: 0.7em;">
+                                @block
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="mt-2">
+                    <strong>Ciphertext Blocks (16 bytes each):</strong>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        @foreach (var block in cbcBlocks)
+                        {
+                            <div class="badge bg-success" style="font-family: monospace; font-size: 0.7em;">
+                                @block
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <p class="mt-2 mb-0 text-success"><strong>Success:</strong> All blocks are different even with repeated plaintext!</p>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer; color: #0d6efd;" 
+                              @onclick="() => SetPlaintext(attack)">
+                            @attack.GetInputAsString()
+                        </code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            ECB (Electronic Codebook) mode encrypts each 16-byte block independently. 
+            Identical plaintext blocks produce identical ciphertext blocks, revealing patterns.
+        </p>
+        
+        <h6 class="mt-4">Why ECB is Dangerous:</h6>
+        <ul>
+            <li><strong>Pattern Leakage:</strong> Repeated data is visible in ciphertext</li>
+            <li><strong>No Randomization:</strong> Same plaintext = same ciphertext</li>
+            <li><strong>Dictionary Attacks:</strong> Build plaintext-ciphertext pairs</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against ECB Mode:</h5>
+        <ol>
+            <li><strong>Don't Use ECB</strong></li>
+            <li><strong>Use CBC/GCM</strong> - with random IV/nonce</li>
+            <li><strong>Use AES-GCM</strong> - authenticated encryption</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Using CBC mode with random IV
+public (byte[] ciphertext, byte[] iv) EncryptData(byte[] plaintext, byte[] key)
+{
+    using var aes = Aes.Create();
+    aes.Key = key;
+    aes.Mode = CipherMode.CBC;  // SECURE
+    aes.GenerateIV();  // Random IV
+    using var encryptor = aes.CreateEncryptor();
+    return (encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length), aes.IV);
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Using ECB mode
+public byte[] EncryptData(byte[] plaintext, byte[] key)
+{
+    using var aes = Aes.Create();
+    aes.Key = key;
+    aes.Mode = CipherMode.ECB;  // VULNERABLE!
+    using var encryptor = aes.CreateEncryptor();
+    return encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string plaintext = "";
+    private string ecbResult = "";
+    private string cbcResult = "";
+    private List<string> plaintextBlocks = new();
+    private List<string> ecbBlocks = new();
+    private List<string> cbcBlocks = new();
+    private Dictionary<string, string> blockColorMap = new();
+    private static readonly byte[] Key = new byte[32];
+
+    static EcbMode()
+    {
+        for (int i = 0; i < Key.Length; i++)
+            Key[i] = (byte)i;
+    }
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("ecb-mode")
+            ?? throw new InvalidOperationException($"Vulnerability not found: ecb-mode");
+    }
+
+    private void SetPlaintext(PredefinedAttack attack)
+    {
+        plaintext = attack.GetInputAsString();
+        ecbResult = "";
+        cbcResult = "";
+        StateHasChanged();
+    }
+
+    private void EncryptECB()
+    {
+        ecbResult = "";
+        cbcResult = "";
+        ecbBlocks = new();
+        plaintextBlocks = new();
+        blockColorMap = new();
+
+        if (string.IsNullOrWhiteSpace(plaintext))
+        {
+            ecbResult = "Please enter plaintext";
+            return;
+        }
+
+        var data = Encoding.UTF8.GetBytes(plaintext);
+        
+        using var aes = Aes.Create();
+        aes.Key = Key;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.PKCS7;
+        
+        using var encryptor = aes.CreateEncryptor();
+        var encrypted = encryptor.TransformFinalBlock(data, 0, data.Length);
+        
+        ecbResult = Convert.ToBase64String(encrypted);
+        
+        BuildPlaintextBlocks(data);
+        BuildCiphertextBlocks(encrypted, ecbBlocks);
+    }
+
+    private void EncryptCBC()
+    {
+        ecbResult = "";
+        cbcResult = "";
+        cbcBlocks = new();
+        plaintextBlocks = new();
+
+        if (string.IsNullOrWhiteSpace(plaintext))
+        {
+            cbcResult = "Please enter plaintext";
+            return;
+        }
+
+        var data = Encoding.UTF8.GetBytes(plaintext);
+        
+        using var aes = Aes.Create();
+        aes.Key = Key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        aes.GenerateIV();
+        
+        using var encryptor = aes.CreateEncryptor();
+        var encrypted = encryptor.TransformFinalBlock(data, 0, data.Length);
+        
+        cbcResult = Convert.ToBase64String(encrypted);
+        
+        BuildPlaintextBlocks(data);
+        BuildCiphertextBlocks(encrypted, cbcBlocks);
+    }
+
+    private void BuildPlaintextBlocks(byte[] data)
+    {
+        plaintextBlocks = new();
+        var paddedLength = ((data.Length + 15) / 16) * 16;
+        
+        for (int i = 0; i < paddedLength; i += 16)
+        {
+            var blockSize = Math.Min(16, data.Length - i);
+            if (blockSize > 0)
+            {
+                var block = new byte[blockSize];
+                Array.Copy(data, i, block, 0, blockSize);
+                var text = Encoding.UTF8.GetString(block)
+                    .Replace("\r", "\\r")
+                    .Replace("\n", "\\n")
+                    .Replace("\t", "\\t");
+                plaintextBlocks.Add(text.Length > 16 ? text.Substring(0, 16) : text);
+            }
+            else
+            {
+                plaintextBlocks.Add("[padding]");
+            }
+        }
+    }
+
+    private void BuildCiphertextBlocks(byte[] encrypted, List<string> blocks)
+    {
+        blocks.Clear();
+        for (int i = 0; i < encrypted.Length; i += 16)
+        {
+            var blockSize = Math.Min(16, encrypted.Length - i);
+            var block = new byte[blockSize];
+            Array.Copy(encrypted, i, block, 0, blockSize);
+            blocks.Add(Convert.ToHexString(block));
+        }
+    }
+
+    private string GetBlockColor(string block)
+    {
+        if (!blockColorMap.ContainsKey(block))
+        {
+            var colors = new[] { "#dc3545", "#0d6efd", "#198754", "#ffc107", "#6f42c1", "#20c997", "#fd7e14" };
+            blockColorMap[block] = colors[blockColorMap.Count % colors.Length];
+        }
+        return blockColorMap[block];
+    }
+}

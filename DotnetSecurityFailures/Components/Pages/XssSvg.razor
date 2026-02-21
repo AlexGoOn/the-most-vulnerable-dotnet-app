@@ -1,0 +1,269 @@
+@page "/vulnerabilities/xss-svg"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Models
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XSS via SVG - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xss-svg" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>SVG Image Display System:</h6>
+        
+        <div class="input-group mb-3">
+            <textarea class="form-control" 
+                      @bind="svgInput" 
+                      rows="3"
+                      placeholder="Enter SVG content"></textarea>
+        </div>
+        <button class="btn btn-primary" @onclick="RenderSVG">Render SVG</button>
+        <small class="text-muted d-block mt-2">Enter SVG code to render it</small>
+
+        @if (!string.IsNullOrEmpty(executedSvg))
+        {
+            <div class="alert alert-info mt-3">
+                <strong>Applied SVG:</strong>
+                <pre class="mb-0 mt-2 small"><code>@executedSvg</code></pre>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(renderedHtml))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Rendered Output:</strong>
+                <div class="mt-2 p-2 bg-white border" style="min-height: 100px;">
+                    @((MarkupString)renderedHtml)
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(attackAnalysis))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Attack Analysis:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@attackAnalysis</pre>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                @foreach (var attack in vulnerability.PredefinedAttacks)
+                {
+                    <li>
+                        <code style="cursor: pointer;" @onclick="() => SetSvgInput(attack.GetInputAsString())">@attack.Input</code>
+                        @attack.Label
+                    </li>
+                }
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            SVG (Scalable Vector Graphics) is XML-based and can contain JavaScript via script tags, 
+            event handlers, and JavaScript URLs. SVG files are often incorrectly trusted as "just images" 
+            but can execute arbitrary JavaScript code when rendered in browsers.
+        </p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: &lt;svg onload=alert('XSS')&gt;&lt;/svg&gt;
+
+HTML becomes:
+&lt;div&gt;
+    &lt;svg onload=alert('XSS')&gt;&lt;/svg&gt;
+&lt;/div&gt;
+
+Result: 
+1. SVG element is created
+2. onload event handler fires immediately
+3. alert('XSS') executes with full page access
+4. JavaScript runs in victim's browser context</code></pre>
+
+        <h6 class="mt-3">Alternative attack with script tag:</h6>
+        <pre class="bg-light p-2 small"><code>Input: &lt;svg&gt;&lt;script&gt;alert('XSS')&lt;/script&gt;&lt;/svg&gt;
+
+Result:
+1. SVG element allows script tags
+2. Script executes when SVG is rendered
+3. Full JavaScript capabilities available</code></pre>
+
+        <h6 class="mt-4">SVG Attack Vectors:</h6>
+        <ul>
+            <li><strong>Script tags:</strong> <code>&lt;svg&gt;&lt;script&gt;malicious code&lt;/script&gt;&lt;/svg&gt;</code></li>
+            <li><strong>Event handlers:</strong> <code>&lt;svg onload="..."&gt;</code>, <code>&lt;svg onclick="..."&gt;</code></li>
+            <li><strong>JavaScript URLs:</strong> <code>&lt;a href="javascript:..."&gt;</code></li>
+            <li><strong>ForeignObject with HTML:</strong> <code>&lt;foreignObject&gt;&lt;iframe&gt;...&lt;/foreignObject&gt;</code></li>
+            <li><strong>Animate elements:</strong> <code>&lt;animate onbegin="..."&gt;</code></li>
+            <li><strong>Use elements:</strong> <code>&lt;use href="javascript:..."&gt;</code></li>
+        </ul>
+
+        <h6 class="mt-4">Why SVG XSS is common:</h6>
+        <ul>
+            <li>Developers assume SVG files are safe like PNG/JPG</li>
+            <li>File upload filters often allow SVG by default</li>
+            <li>Content-Type checks are insufficient</li>
+            <li>SVG can be inline or external files</li>
+            <li>Many ways to embed JavaScript in SVG</li>
+        </ul>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Full XSS exploitation</strong> - all XSS attack capabilities</li>
+            <li><strong>Session hijacking</strong> - steal authentication cookies</li>
+            <li><strong>Bypasses file upload filters</strong> - looks like an image</li>
+            <li><strong>Stored XSS</strong> - if SVG is stored and served to other users</li>
+            <li><strong>Phishing</strong> - display convincing fake UI elements</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against SVG XSS:</h5>
+        <ol>
+            <li><strong>Avoid MarkupString</strong> - Don't' use MarkupString with user-provided SVG</li>
+            <li><strong>Sanitize SVG content</strong> - Use HtmlSanitizer to remove scripts and event handlers</li>
+            <li><strong>Content Security Policy</strong> - Set strict CSP to block inline scripts</li>
+            <li><strong>Serve as image/svg+xml</strong> - Ensure correct Content-Type header</li>
+            <li><strong>Content-Disposition: attachment</strong> - Force download instead of inline display</li>
+            <li><strong>Separate domain</strong> - Serve user content from different domain (no cookies)</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Sanitize SVG or convert to PNG
+using Ganss.Xss;
+
+
+[HttpPost]
+public IActionResult UploadIcon(IFormFile file)
+{
+    var svgContent = new StreamReader(file.OpenReadStream())
+        .ReadToEnd();
+    
+    // SAFE: Sanitize SVG
+    var sanitizer = new HtmlSanitizer();
+    
+    // Remove dangerous tags
+    sanitizer.AllowedTags.Remove(\"script\;
+    sanitizer.AllowedTags.Remove(\"foreignObject\;
+    sanitizer.AllowedTags.Remove(\"use\;
+    
+    // Remove event handlers
+    sanitizer.AllowedAttributes.Remove(\"onload\;
+    sanitizer.AllowedAttributes.Remove(\"onclick\;
+    sanitizer.AllowedAttributes.Remove(\"onerror\;
+    sanitizer.AllowedAttributes.Remove(\"onbegin\;
+    
+    // Sanitize
+    var safeSvg = sanitizer.Sanitize(svgContent);
+    
+    return Content(safeSvg, \"image/svg+xml\;
+}
+
+
+// Or better: Convert to PNG
+using SkiaSharp;
+using Svg.Skia;
+
+
+public byte[] ConvertSvgToPng(string svgContent)
+{
+    var svg = new SKSvg();
+    svg.FromSvg(svgContent);
+    
+    using var bitmap = new SKBitmap(
+        (int)svg.Picture.CullRect.Width,
+        (int)svg.Picture.CullRect.Height);
+    
+    using var canvas = new SKCanvas(bitmap);
+    canvas.DrawPicture(svg.Picture);
+    
+    using var image = SKImage.FromBitmap(bitmap);
+    return image.Encode(SKEncodedImageFormat.Png, 100)
+        .ToArray();
+}
+
+
+// Best: Block SVG uploads entirely
+// Only allow PNG, JPG, WebP
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: Render user-provided SVG directly
+[HttpPost]
+public IActionResult UploadIcon(IFormFile file)
+{
+    // BAD: Only checking file extension
+    if (Path.GetExtension(file.FileName) != \".svg\
+        return BadRequest(\"Only SVG allowed\;
+    
+    // BAD: Storing without sanitization
+    var svgContent = new StreamReader(file.OpenReadStream())
+        .ReadToEnd();
+    
+    // BAD: Serving directly to users
+    return Content(svgContent, \"image/svg+xml\;
+}
+
+
+// In Blazor - VULNERABLE
+private void RenderSVG()
+{
+    var userSvg = svgInput;
+    
+    // VULNERABLE - no sanitization
+    renderedHtml = userSvg;
+    
+    // MarkupString renders raw HTML/SVG
+    // If userSvg = \"<svg onload=alert('XSS')></svg>\"
+    // The script will execute!
+}
+
+
+// Input: <svg onload=\"alert('XSS')\"></svg>
+// Result: Script executes when SVG is displayed!
+""";
+
+    private Vulnerability? vulnerability;
+
+    private string svgInput = "";
+    private string? executedSvg;
+    private string? renderedHtml;
+    private string? attackAnalysis;
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("xss-svg")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xss-svg");
+    }
+
+    private void RenderSVG()
+    {
+        ClearResults();
+
+        if (string.IsNullOrWhiteSpace(svgInput))
+        {
+            renderedHtml = "Please enter SVG content";
+            return;
+        }
+
+        executedSvg = svgInput;
+        renderedHtml = svgInput;
+
+        var predefinedAttack = vulnerability.PredefinedAttacks
+            .FirstOrDefault(a => a.Input == svgInput);
+        attackAnalysis = predefinedAttack?.Description ?? "Custom SVG content rendered.";
+    }
+
+    private void SetSvgInput(string svg)
+    {
+        svgInput = svg;
+        ClearResults();
+    }
+
+    private void ClearResults()
+    {
+        executedSvg = null;
+        renderedHtml = null;
+        attackAnalysis = null;
+    }
+}

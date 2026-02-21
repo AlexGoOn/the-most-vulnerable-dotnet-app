@@ -1,0 +1,166 @@
+@page "/vulnerabilities/ldap-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerableLdapService LdapService
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>LDAP Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="ldap-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Active Directory User Search:</h6>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="username" 
+                   placeholder="john.doe" />
+            <button class="btn btn-primary" @onclick="SearchUser">Search</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ldapQuery))
+        {
+            <div class="alert alert-warning">
+                <strong>LDAP Query:</strong>
+                <pre class="mb-0 mt-2"><code>@ldapQuery</code></pre>
+            </div>
+        }
+
+        @if (searchResult != null)
+        {
+            <div class="alert alert-danger" style="white-space: pre-wrap; word-wrap: break-word;">
+                <strong>Search Results:</strong>
+                <div>@searchResult</div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername("john.doe"))">john.doe</code> - normal search (returns 1 user)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername("*"))">*</code> - return all users</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername("admin)(&(objectClass=*"))">admin)(&amp;(objectClass=*</code> - bypass filter</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetUsername("*))(|(password=*"))">*))(|(password=*</code> - extract passwords</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>LDAP (Lightweight Directory Access Protocol) is used for authentication and user directory queries. 
+        When user input is directly concatenated into LDAP filters, attackers can manipulate the query logic 
+        using special characters like <code>*</code>, <code>(</code>, <code>)</code>, <code>&amp;</code>, and <code>|</code>.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: *
+
+Query becomes:
+(&(objectClass=user)(cn=*))
+
+Result: Returns ALL users (wildcard matches everything)</code></pre>
+
+        <h6 class="mt-3">Filter bypass example:</h6>
+        <pre class="bg-light p-2 small"><code>Input: admin)(&(objectClass=*
+
+Query becomes:
+(&(objectClass=user)(cn=admin)(&(objectClass=*))
+
+Result: Adds always-true condition, bypasses filter</code></pre>
+        
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Authentication bypass</strong> - login without credentials</li>
+            <li><strong>Access to all directory entries</strong> - complete directory dump</li>
+            <li><strong>Exposure of sensitive user data</strong> - emails, phones, SSNs</li>
+            <li><strong>Privilege escalation</strong> - discover admin accounts</li>
+            <li><strong>Information disclosure</strong> - directory structure exposed</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against LDAP Injection:</h5>
+        <ol>
+            <li><strong>Use PrincipalContext</strong> - built-in .NET API with automatic escaping and validation</li>
+            <li><strong>Input validation</strong> - whitelist allowed characters (alphanumeric, dots, hyphens only)</li>
+            <li><strong>Escape special characters</strong> - escape <code>\ * ( ) \0</code> with backslash-hex encoding (\5c, \2a, \28, \29, \00)</li>
+            <li><strong>Least privilege</strong> - limit LDAP query permissions to read-only, restrict accessible attributes</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Escape LDAP special characters
+string EscapeLdapFilter(string input)
+{
+    return input
+        .Replace(\"\\\\\", \"\\\\5c\
+        .Replace(\"*\", \"\\\\2a\
+        .Replace(\"(\", \"\\\\28\
+        .Replace(\\", \"\\\\29\
+        .Replace(\"\\0\", \"\\\\00\;
+}
+
+string safeUsername = EscapeLdapFilter(username);
+string filter = $\"(&(objectClass=user)(cn={safeUsername}))\";
+
+// Input: *
+// Escaped: \\2a
+// Query: (&(objectClass=user)(cn=\\2a))
+// Searches for literal \"*\" - attack prevented!
+
+// Better: Use PrincipalContext with built-in escaping
+using var context = new PrincipalContext(
+    ContextType.Domain, \"company.com\;
+UserPrincipal user = UserPrincipal.FindByIdentity(
+    context, username);
+
+// Built-in escaping and validation - safest approach!
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: String concatenation in LDAP filter
+string filter = $\"(&(objectClass=user)(cn={username}))\";
+
+using var entry = new DirectoryEntry(\"LDAP://DC=company,DC=com\;
+using var searcher = new DirectorySearcher(entry)
+{
+    Filter = filter
+};
+
+SearchResultCollection results = searcher.FindAll();
+
+// Input: *
+// Resulting query: (&(objectClass=user)(cn=*))
+// Returns ALL users - complete directory exposure!
+
+// Input: admin)(&(objectClass=*
+// Resulting query: (&(objectClass=user)(cn=admin)(&(objectClass=*))
+// Bypasses filter - authentication compromised!
+""";
+
+    private string username = "";
+    private string? ldapQuery;
+    private string? searchResult;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("ldap-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: ldap-injection");
+    }
+
+    private void SearchUser()
+    {
+        searchResult = null;
+        ldapQuery = null;
+
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            searchResult = "Please enter a username";
+            return;
+        }
+
+        ldapQuery = LdapService.GetExecutedQuery(username);
+        searchResult = LdapService.SearchUserVulnerable(username);
+    }
+
+    private void SetUsername(string term)
+    {
+        username = term;
+        searchResult = null;
+        ldapQuery = null;
+    }
+}

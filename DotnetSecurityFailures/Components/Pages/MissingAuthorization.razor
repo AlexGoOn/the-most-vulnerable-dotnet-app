@@ -1,0 +1,243 @@
+@*
+    Vulnerability: Missing Authorization Check
+    Slug: missing-authorization
+    Category: Authentication & Authorization
+    Severity: Critical
+    
+    Controller: MissingAuthorizationController
+    
+    Description: API endpoints accessible without authorization checks
+*@
+@page "/vulnerabilities/missing-authorization"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
+
+<PageTitle>@vulnerability.Title - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="@Slug" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Simulate API Requests:</h6>
+        <p class="small text-muted">Test different API endpoints with/without authorization</p>
+
+        <div class="mb-3">
+            <label class="form-label">Select Endpoint:</label>
+            <select class="form-select" @bind="selectedEndpoint">
+                <option value="/api/public/products">GET /api/public/products</option>
+                <option value="/api/vulnerabilities/missing-authorization/users">GET /api/vulnerabilities/missing-authorization/users</option>
+                <option value="/api/vulnerabilities/missing-authorization/delete-user?id=42">DELETE /api/vulnerabilities/missing-authorization/delete-user?id=42</option>
+            </select>
+        </div>
+
+        <button class="btn btn-primary" @onclick="MakeRequest">
+            Send Request
+        </button>
+
+        @if (!string.IsNullOrEmpty(responseData)) {
+            <div class="@responseCssClass mt-3">
+                <strong>Response:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@responseData</pre>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            Missing authorization occurs when sensitive API endpoints or pages don't verify
+            that the user has permission to access them. Developers often forget to add
+            authorization checks, assuming URL obscurity provides security.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker discovers admin endpoint URL
+   (through documentation, error messages, or guessing)
+
+2. Sends direct HTTP request bypassing UI:
+   GET /api/vulnerabilities/missing-authorization/users HTTP/1.1
+   Host: vulnerable-site.com
+
+3. Server doesn't check authorization
+   No [Authorize] attribute on endpoint
+
+4. Returns sensitive data:
+   [{"id":1,"email":"admin@site.com","password":"..."}]
+
+Result: Unauthorized access to sensitive data!</code></pre>
+
+        <h6 class="mt-3">Common mistakes:</h6>
+        <ul>
+            <li>Forgetting <code>[Authorize]</code> attribute on controllers/endpoints</li>
+            <li>Only hiding UI elements without backend checks</li>
+            <li>Assuming URL obscurity provides security</li>
+            <li>Checking authentication but not authorization (user vs admin)</li>
+            <li>Relying on client-side validation only</li>
+        </ul>
+
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Unauthorized data access</strong> - view other users' private data</li>
+            <li><strong>Privilege escalation</strong> - regular user performs admin operations</li>
+            <li><strong>Data modification/deletion</strong> - unauthorized changes to database</li>
+            <li><strong>Complete system compromise</strong> - access to admin functions</li>
+            <li><strong>IDOR vulnerabilities</strong> - access any user's data by changing ID</li>
+            <li><strong>Business logic bypass</strong> - skip payment, approval workflows</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Missing Authorization:</h5>
+        <ol>
+            <li><strong>[Authorize] attribute</strong> - use on all controllers/endpoints except truly public ones</li>
+            <li><strong>Default deny policy</strong> - require explicit authorization for all routes by default</li>
+            <li><strong>Role-based access control (RBAC)</strong> - use [Authorize(Roles = "Admin")]</li>
+            <li><strong>Policy-based authorization</strong> - define custom authorization policies for complex scenarios</li>
+            <li><strong>Server-side validation always</strong> - never trust client-side checks</li>
+            <li><strong>Resource-based authorization</strong> - verify user owns the resource they're accessing</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = "missing-authorization";
+    
+    private Vulnerability vulnerability = null!;
+
+    private const string VulnerableCode = """
+// DANGEROUS: No authorization check
+[ApiController]
+[Route("api/vulnerabilities/missing-authorization")]
+public class MissingAuthorizationController : ControllerBase
+{
+    // No [Authorize] attribute!
+    [HttpGet("users")]
+    public IActionResult GetAllUsers()
+    {
+        var users = dbContext.Users
+            .Select(u => new { u.Id, u.Email, u.Password })
+            .ToList();
+
+        return Ok(users);  // Anyone can access!
+    }
+
+    // No authorization on dangerous operation!
+    [HttpDelete("delete-user")]
+    public IActionResult DeleteUser([FromQuery] int id)
+    {
+        var user = dbContext.Users.Find(id);
+        dbContext.Users.Remove(user);
+        dbContext.SaveChanges();
+        return Ok();  // Anyone can delete!
+    }
+}
+
+// Client-side only check (bypassable)
+@if (isAdmin)
+{
+    <button @onclick="DeleteUser">Delete</button>
+}
+
+private async Task DeleteUser()
+{
+    // VULNERABLE - no authorization check
+    await Http.DeleteAsync($"/api/users/{userId}");
+}
+""";
+
+    private const string SafeCode = """
+// CORRECT: Use [Authorize] attribute
+[Authorize(Roles = "Admin")]
+[ApiController]
+[Route("api/vulnerabilities/missing-authorization")]
+public class MissingAuthorizationController : ControllerBase
+{
+    [HttpGet("users")]
+    public IActionResult GetAllUsers()
+    {
+        var users = dbContext.Users
+            .Select(u => new { u.Id, u.Email })  // Don't expose passwords!
+            .ToList();
+
+        return Ok(users);
+    }
+
+    // Policy-based authorization
+    [Authorize(Policy = "RequireAdminRole")]
+    [HttpDelete("delete-user")]
+    public IActionResult DeleteUser([FromQuery] int id)
+    {
+        // Additional check: prevent self-deletion
+        if (id == GetCurrentUserId())
+            return BadRequest("Cannot delete yourself");
+
+        var user = dbContext.Users.Find(id);
+        dbContext.Users.Remove(user);
+        dbContext.SaveChanges();
+        return Ok();
+    }
+}
+
+// Blazor page with authorization
+@page "/admin/dashboard"
+@attribute [Authorize(Roles = "Admin")]
+
+<h1>Admin Dashboard</h1>
+
+// Configure authorization policies in Program.cs
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("RequireAdminRole", policy =>
+        policy.RequireRole("Admin"));
+});
+""";
+
+    // Fields and properties
+    private string selectedEndpoint = "/api/public/products";
+    private string responseData = "";
+    private string responseCssClass = "";
+
+    // Lifecycle methods
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug(Slug) 
+            ?? throw new InvalidOperationException($"Vulnerability not found: {Slug}");
+    }
+
+    // Event handlers
+    private async Task MakeRequest() {
+        responseData = "";
+
+        var httpClient = HttpClientFactory.CreateClient();
+        httpClient.BaseAddress = new Uri(NavigationManager.BaseUri);
+
+        HttpResponseMessage response;
+
+        if (selectedEndpoint.Contains("delete-user")) {
+            response = await httpClient.DeleteAsync(selectedEndpoint);
+        }
+        else {
+            response = await httpClient.GetAsync(selectedEndpoint);
+        }
+
+        var content = await response.Content.ReadAsStringAsync();
+        var statusCode = (int)response.StatusCode;
+
+        if (selectedEndpoint.Contains("/api/public/products")) {
+            responseCssClass = "alert alert-success";
+            responseData = $"HTTP {statusCode} {response.ReasonPhrase}\n\n{content}";
+        }
+        else if (selectedEndpoint.Contains("/api/vulnerabilities/missing-authorization")) {
+            responseCssClass = "alert alert-danger";
+            responseData = $"VULNERABILITY - AUTHORIZATION MISSING!\n\n" +
+                          $"HTTP {statusCode} {response.ReasonPhrase} (SHOULD BE 401/403!)\n\n" +
+                          $"{content}";
+        }
+    }
+
+    private async Task SelectAndRequest(string endpoint) {
+        selectedEndpoint = endpoint;
+        responseData = "";
+        await MakeRequest();
+    }
+}

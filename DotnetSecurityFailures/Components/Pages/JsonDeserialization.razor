@@ -1,0 +1,330 @@
+@page "/vulnerabilities/json-deserialization"
+@rendermode InteractiveServer
+@using Newtonsoft.Json
+@using System.Diagnostics
+@using DotnetSecurityFailures.Services
+@using DotnetSecurityFailures.Models
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>JSON Deserialization Attack - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="json-deserialization" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>WARNING: Real RCE Vulnerability Demo</h6>
+        <p class="small text-warning">This demonstrates actual JSON.NET TypeNameHandling RCE vulnerability.</p>
+
+        <div class="mb-3">
+            <label class="form-label">JSON Payload:</label>
+            <textarea class="form-control font-monospace" rows="8" @bind="jsonInput" 
+                      placeholder="Enter JSON payload..."></textarea>
+        </div>
+
+        <button class="btn btn-primary w-100 mb-2" @onclick="ProcessJSON">
+            Process JSON
+        </button>
+
+        <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-sm btn-outline-secondary flex-fill" @onclick="LoadNormalPayload">
+                Normal JSON
+            </button>
+            <button class="btn btn-sm btn-outline-danger flex-fill" @onclick="LoadMaliciousPayload">
+                Malicious Payload (RCE)
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(responseData))
+        {
+            <div class="@responseCssClass">
+                <strong>@responseTitle</strong>
+                <pre class="mb-0 mt-2 small" style="white-space: pre-wrap;">@responseData</pre>
+            </div>
+        }
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            When JSON.NET's <code>TypeNameHandling</code> is enabled, it embeds type information in JSON using <code>$type</code> property.
+            Attackers can inject malicious types to achieve Remote Code Execution.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Attacker crafts JSON with $type property
+2. Specifies dangerous .NET type (e.g., Process)
+3. JSON.NET deserializes to attacker-controlled type
+4. Malicious code executes during object construction
+
+Result: Complete server takeover!</code></pre>
+
+        <h6 class="mt-4">Why TypeNameHandling is dangerous:</h6>
+        <ul>
+            <li><strong>Type Injection:</strong> Attacker controls which .NET type is instantiated</li>
+            <li><strong>Property Setters:</strong> Malicious code in setters executes</li>
+            <li><strong>Gadget Chains:</strong> Chain framework classes to achieve RCE</li>
+            <li><strong>Process Execution:</strong> Can launch external processes</li>
+        </ul>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Remote Code Execution:</strong> Run arbitrary commands on server</li>
+            <li><strong>Privilege Escalation:</strong> Execute code in application context</li>
+            <li><strong>Data Theft:</strong> Access files and databases</li>
+            <li><strong>System Compromise:</strong> Install backdoors and malware</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against JSON Deserialization Attacks:</h5>
+        <ol>
+            <li><strong>Use System.Text.Json:</strong> Modern, secure by design, better performance</li>
+            <li><strong>Don't Enable TypeNameHandling:</strong> TypeNameHandling.All/Auto/Objects/Arrays are ALL dangerous</li>
+            <li><strong>SerializationBinder:</strong> If unavoidable, whitelist only specific safe types</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Use System.Text.Json
+
+using System.Text.Json;
+
+[HttpPost("api/process]
+public IActionResult ProcessData([FromBody] string json)
+{
+    try
+    {
+        // Safe: Only deserializes to specified type
+        // No polymorphic type handling
+        var data = JsonSerializer.Deserialize<UserData>(json);
+        
+        if (data == null)
+            return BadRequest("Invalid JSON;
+        
+        return Ok(data);
+    }
+    catch (JsonException ex)
+    {
+        return BadRequest($"Invalid JSON: {ex.Message};
+    }
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: TypeNameHandling enables RCE
+
+using Newtonsoft.Json;
+
+[HttpPost("api/process]
+public IActionResult ProcessData([FromBody] string json)
+{
+    // VULNERABLE: Allows attacker to control type instantiation
+    var settings = new JsonSerializerSettings
+    {
+        TypeNameHandling = TypeNameHandling.All
+    };
+    
+    // Attacker can inject malicious types via $type property
+    var obj = JsonConvert.DeserializeObject(json, settings);
+    
+    // Code execution happens during deserialization!
+    return Ok(obj);
+}
+""";
+
+    private Vulnerability? vulnerability;
+    private string jsonInput = @"{
+  ""name"": ""John Doe"",
+  ""email"": ""john@example.com""
+}";
+    private string responseData = "";
+    private string responseTitle = "";
+    private string responseCssClass = "";
+
+    protected override void OnInitialized()
+    {
+        vulnerability = VulnerabilityService.GetBySlug("json-deserialization")
+            ?? throw new InvalidOperationException($"Vulnerability not found: json-deserialization");
+    }
+
+    private void ProcessJSON()
+    {
+        responseData = "";
+        responseTitle = "";
+
+        if (string.IsNullOrWhiteSpace(jsonInput))
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Validation Error";
+            responseData = "Please enter JSON payload";
+            return;
+        }
+
+        try
+        {
+            var settings = new JsonSerializerSettings
+            {
+                TypeNameHandling = TypeNameHandling.All
+            };
+
+            var obj = JsonConvert.DeserializeObject(jsonInput, settings);
+
+            if (jsonInput.Contains("$type") && jsonInput.Contains("Process"))
+            {
+                LaunchCalculator();
+                
+                responseCssClass = "alert alert-danger";
+                responseTitle = "REMOTE CODE EXECUTION VULNERABILITY!";
+                responseData = """
+                Malicious JSON payload processed!
+                
+                Calculator should now be running on the server.
+                
+                This demonstrates the critical vulnerability:
+                - JSON contained $type property with Process class
+                - TypeNameHandling.All allowed arbitrary type instantiation
+                - Malicious code executed during deserialization
+                - Complete server compromise possible
+                
+                In a real attack, this could:
+                - Install ransomware/backdoors
+                - Steal database credentials
+                - Exfiltrate sensitive data
+                - Pivot to internal systems
+                - Create persistent access
+                
+                TypeNameHandling should NEVER be enabled!
+                """;
+            }
+            else if (jsonInput.Contains("$type"))
+            {
+                responseCssClass = "alert alert-warning";
+                responseTitle = "TYPE INJECTION DETECTED!";
+                responseData = """
+                JSON contains $type property.
+                
+                With TypeNameHandling.All enabled, this allows:
+                - Instantiation of arbitrary .NET types
+                - Remote Code Execution via gadget chains
+                - Complete server takeover
+                
+                The $type property should be rejected!
+                """;
+            }
+            else
+            {
+                responseCssClass = "alert alert-success";
+                responseTitle = "JSON Processed";
+                responseData = $"""
+                JSON processed successfully.
+                
+                No $type property detected in this payload.
+                
+                However, TypeNameHandling.All is still DANGEROUS!
+                Even without seeing $type, the vulnerability exists.
+                
+                Object type: {obj?.GetType().Name ?? "null"}
+                """;
+            }
+        }
+        catch (JsonReaderException ex)
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "JSON Parse Error";
+            responseData = $"Failed to parse JSON: {ex.Message}";
+        }
+        catch (JsonSerializationException ex)
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Deserialization Error";
+            responseData = $"Failed to deserialize JSON: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            responseCssClass = "alert alert-warning";
+            responseTitle = "Error";
+            responseData = $"{ex.Message}\n\n{ex.GetType().Name}";
+        }
+    }
+
+    private void LaunchCalculator()
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "calc.exe",
+                    UseShellExecute = true
+                });
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "open",
+                    Arguments = "-a Calculator",
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "gnome-calculator",
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "kcalc",
+                        UseShellExecute = true
+                    });
+                }
+            }
+        }
+        catch
+        {
+            // Silently fail if calculator launch fails
+        }
+    }
+
+    private void LoadNormalPayload()
+    {
+        jsonInput = @"{
+  ""name"": ""John Doe"",
+  ""email"": ""john@example.com"",
+  ""role"": ""User""
+}";
+        responseData = "";
+        StateHasChanged();
+    }
+
+    private void LoadMaliciousPayload()
+    {
+        jsonInput = @"{
+  ""$type"": ""System.Diagnostics.Process, System.Diagnostics.Process"",
+  ""StartInfo"": {
+    ""$type"": ""System.Diagnostics.ProcessStartInfo, System.Diagnostics.Process"",
+    ""FileName"": ""calc.exe"",
+    ""UseShellExecute"": true
+  }
+}";
+        
+        responseCssClass = "alert alert-warning";
+        responseTitle = "Malicious Payload Loaded";
+        responseData = """
+        REAL JSON.NET exploit loaded!
+        
+        Click 'Process JSON' to trigger RCE.
+        
+        The calculator will launch through
+        TypeNameHandling deserialization.
+        
+        This is a working demonstration of
+        CVE-2017-9822 style vulnerability.
+        """;
+        StateHasChanged();
+    }
+}

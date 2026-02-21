@@ -1,0 +1,237 @@
+@page "/vulnerabilities/negative-quantities"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Negative Quantities Attack - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="negative-quantities" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Shopping Cart System:</h6>
+        <p class="small text-muted">Add products to cart with quantity selection</p>
+
+        <div class="mb-3">
+            <strong>Product:</strong> Premium Widget<br/>
+            <strong>Price:</strong> $50.00 each
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Quantity:</label>
+            <input type="number" class="form-control" @bind="quantity" 
+                   placeholder="Enter quantity" />
+        </div>
+        
+        <button class="btn btn-primary" @onclick="AddToCart">
+            Add to Cart
+        </button>
+        
+        @if (!string.IsNullOrEmpty(result))
+        {
+            <div class="@resultCssClass mt-3">
+                <strong>Result:</strong>
+                <pre class="mb-0 mt-2" style="white-space: pre-wrap;">@result</pre>
+            </div>
+        }
+        
+        @if (cartItems.Any())
+        {
+            <div class="card mt-3 bg-light">
+                <div class="card-header">
+                    <strong>Cart Contents:</strong>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in cartItems)
+                            {
+                                <tr>
+                                    <td>@item.Product</td>
+                                    <td>@item.Quantity</td>
+                                    <td>$@item.Price</td>
+                                    <td class="@(item.Total < 0 ? "text-danger fw-bold" : "")">
+                                        $@item.Total
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3"><strong>Grand Total:</strong></td>
+                                <td class="@(grandTotal < 0 ? "text-danger fw-bold" : "")">
+                                    <strong>$@grandTotal</strong>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <button class="btn btn-sm btn-secondary mt-2" @onclick="ClearCart">
+                        Clear Cart
+                    </button>
+                </div>
+            </div>
+        }
+        
+        <div class="alert alert-dark mt-3">
+            <strong>Try these payloads:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetQuantity(-1)'>-1</code>
+                    - single negative item (reduces total by $50)
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick='() => SetQuantity(-10)'>-10</code>
+                    - large negative quantity (reduces by $500)
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Negative Quantities Attack</strong> exploits missing input validation
+            to manipulate business calculations. Applications that accept numeric inputs
+            without checking for negative values can be exploited to reverse transactions.
+        </p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Normal: Add 10 items at $50 = $500
+2. Attack: Add -20 items at $50 = -$1000
+3. Total = $500 + (-$1000) = -$500
+4. Store owes customer $500!
+
+Result: Free products + refunds!</code></pre>
+        
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Financial Loss</strong> - free products or unauthorized refunds</li>
+            <li><strong>Inventory Issues</strong> - negative stock counts</li>
+            <li><strong>Point Manipulation</strong> - negative loyalty points</li>
+            <li><strong>Business Logic Bypass</strong> - circumvent pricing rules</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Negative Quantity Attacks:</h5>
+        <ol>
+            <li><strong>Input Validation</strong> - Check for positive values using Data Annotations</li>
+            <li><strong>Range Constraints</strong> - Use [Range(1, 1000)] attribute</li>
+            <li><strong>Separate Methods</strong> - AddPoints() vs RemovePoints()</li>
+            <li><strong>Type Safety</strong> - Use uint/ulong for non-negative values</li>
+            <li><strong>Business Rules</strong> - Validate max order quantity limits</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+public void AddItem(int quantity, decimal price)
+{
+    if (quantity <= 0)
+        throw new ArgumentException("Quantity must be positive;
+    
+    if (price < 0)
+        throw new ArgumentException("Price cannot be negative;
+    
+    if (quantity > 1000)
+        throw new ArgumentException("Quantity exceeds maximum;
+    
+    var item = new CartItem
+    {
+        Quantity = quantity,
+        Price = price,
+        Total = quantity * price
+    };
+    Items.Add(item);
+}
+""";
+    private const string VulnerableCode = """
+public void AddItem(int quantity, decimal price)
+{
+    // No check if quantity is negative!
+    var item = new CartItem
+    {
+        Quantity = quantity,  // Can be negative!
+        Price = price,
+        Total = quantity * price  // Negative total!
+    };
+    Items.Add(item);
+}
+""";
+    private int quantity = 1;
+    private string result = "";
+    private string resultCssClass = "";
+    private List<CartItem> cartItems = new();
+    private decimal grandTotal => cartItems.Sum(i => i.Total);
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("negative-quantities")
+            ?? throw new InvalidOperationException($"Vulnerability not found: negative-quantities");
+    }
+
+    private class CartItem
+    {
+        public string Product { get; set; } = "";
+        public int Quantity { get; set; }
+        public decimal Price { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    private void AddToCart()
+    {
+        var price = 50.00m;
+        var total = quantity * price;
+
+        var item = new CartItem
+        {
+            Product = "Premium Widget",
+            Quantity = quantity,
+            Price = price,
+            Total = total
+        };
+
+        cartItems.Add(item);
+
+        if (quantity < 0)
+        {
+            resultCssClass = "alert alert-danger";
+            result = $"NEGATIVE QUANTITY EXPLOIT!\n\n" +
+                     $"Added: {quantity} items\n" +
+                     $"Price per item: ${price}\n" +
+                     $"Line total: ${total}\n\n" +
+                     $"Current cart total: ${grandTotal}";
+
+            if (grandTotal < 0)
+            {
+                result += $"\n\nCRITICAL: Cart total is NEGATIVE!\n" +
+                          $"Attacker would receive ${Math.Abs(grandTotal)} from the store!";
+            }
+        }
+        else
+        {
+            resultCssClass = "alert alert-success";
+            result = $"Added {quantity} item(s) to cart\n" +
+                     $"Line total: ${total}\n" +
+                     $"Cart total: ${grandTotal}";
+        }
+    }
+
+    private void SetQuantity(int value)
+    {
+        quantity = value;
+        result = "";
+        resultCssClass = "";
+    }
+
+    private void ClearCart()
+    {
+        cartItems.Clear();
+        result = "Cart cleared";
+        resultCssClass = "alert alert-info";
+    }
+}

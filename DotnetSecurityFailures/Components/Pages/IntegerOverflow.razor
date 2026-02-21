@@ -1,0 +1,174 @@
+@page "/vulnerabilities/integer-overflow"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Integer Overflow - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="integer-overflow" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Premium Item Store:</h6>
+        <p class="small text-muted">Purchase items using your loyalty points</p>
+
+        <div class="alert alert-info">
+            <strong>Your Balance:</strong> @currentPoints.ToString("N0") points
+            <div class="small text-muted">
+                Maximum int value: @int.MaxValue.ToString("N0")
+            </div>
+        </div>
+
+        <div class="card bg-light mb-3">
+            <div class="card-body">
+                <h6 class="card-title">Premium Gift Box</h6>
+                <p class="card-text">
+                    <strong>Price:</strong> @itemPrice.ToString("N0") points per item
+                </p>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Quantity:</label>
+            <input type="number" class="form-control" @bind="quantity" @bind:event="oninput" min="1" />
+        </div>
+
+        @{
+            var expectedTotal = (long)itemPrice * quantity;
+            var isOverflowPreview = expectedTotal > int.MaxValue || expectedTotal < int.MinValue;
+            var actualTotal = itemPrice * quantity;
+        }
+
+        <div class="alert @(isOverflowPreview ? "alert-warning" : "alert-secondary") mb-3">
+            <strong>Order Summary:</strong>
+            <div class="mt-2">
+                <div>Items: @quantity.ToString("N0")</div>
+                <div>Price per item: @itemPrice.ToString("N0") points</div>
+                <hr class="my-2" />
+                @if (isOverflowPreview) {
+                    <div class="text-danger">
+                        <strong>Expected Total:</strong> @expectedTotal.ToString("N0") points
+                        <div class="small">(Exceeds int.MaxValue!)</div>
+                    </div>
+                    <div class="text-danger mt-1">
+                        <strong>Actual Result:</strong> @actualTotal.ToString("N0") points
+                        <div class="small">(INTEGER OVERFLOW!)</div>
+                    </div>
+                }
+                else {
+                    <div>
+                        <strong>Total:</strong> @expectedTotal.ToString("N0") points
+                    </div>
+                }
+            </div>
+        </div>
+
+        <button class="btn btn-primary" @onclick="PurchaseItems">
+            Purchase Items
+        </button>
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these quantities:</strong>
+            <ul class="mb-0">
+                <li>
+                    <code style="cursor: pointer;" @onclick="() => SetQuantity(5)">5</code>
+                    - normal purchase (500,000 points)
+                </li>
+                <li>
+                    <code style="cursor: pointer;" @onclick="() => SetQuantity(25_000)">25,000</code>
+                    - causes integer overflow!
+                </li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>
+            <strong>Integer Overflow</strong> occurs when arithmetic operations produce values
+            outside the range that can be stored in the data type. In .NET, unchecked arithmetic
+            silently wraps around, leading to unexpected negative values.
+        </p>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>1. Item costs 100,000 points
+2. Attacker orders 25,000 items
+3. Calculation: 100,000 � 25,000 = 2,500,000,000
+4. Exceeds int.MaxValue (2,147,483,647)
+5. Overflows to negative value!
+6. Purchase approved - balance increases!
+
+Result: Free items + bonus points!</code></pre>
+
+        <h6 class="mt-4">Consequences:</h6>
+        <ul>
+            <li><strong>Financial fraud</strong> - free purchases</li>
+            <li><strong>Balance manipulation</strong> - negative costs increase balance</li>
+            <li><strong>Authorization bypass</strong> - negative values pass validation</li>
+            <li><strong>Buffer overflows</strong> - memory allocation errors</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Integer Overflow:</h5>
+        <ol>
+            <li><strong>Validate Before Operations</strong> - Check if multiplication would overflow</li>
+            <li><strong>Use Appropriate Types</strong> - long for large values, decimal for money</li>
+            <li><strong>Use Checked Arithmetic</strong> - Enable CheckForOverflowUnderflow in .csproj or use the <code>checked { }</code> block for critical sections </li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Validate and use checked arithmetic
+public bool PurchaseItems(int quantity)
+{
+    if (quantity <= 0 || quantity > 10_000)
+        throw new ArgumentException("Invalid quantity;
+    
+    // Check if multiplication would overflow
+    if (quantity > int.MaxValue / ItemPrice)
+        throw new OverflowException("Total cost too large;
+    
+    int totalCost = ItemPrice * quantity;
+    
+    if (totalCost > UserPoints)
+        return false;
+    
+    UserPoints -= totalCost;
+    return true;
+}
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: No overflow checking
+public bool PurchaseItems(int quantity)
+{
+    // VULNERABLE: Can overflow!
+    int totalCost = ItemPrice * quantity;
+    
+    // Negative cost passes check
+    if (totalCost > UserPoints)
+        return false;
+    
+    // Subtracting negative = adding points!
+    UserPoints -= totalCost;
+    return true;
+}
+""";
+    private int currentPoints = 1_000_000;
+    private int itemPrice = 100_000;
+    private int quantity = 1;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("integer-overflow")
+            ?? throw new InvalidOperationException($"Vulnerability not found: integer-overflow");
+    }
+
+    private void PurchaseItems()
+    {
+        var totalCost = itemPrice * quantity;
+        currentPoints -= totalCost;
+    }
+
+    private void SetQuantity(int newQuantity)
+    {
+        quantity = newQuantity;
+    }
+}

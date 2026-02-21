@@ -1,0 +1,304 @@
+@page "/vulnerabilities/xpath-injection"
+@rendermode InteractiveServer
+@using System.Xml
+@using System.Xml.XPath
+@using DotnetSecurityFailures.Services
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>XPath Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="xpath-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <h6>Product Catalog Search:</h6>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" @bind="productName" 
+                   placeholder="Enter product name" />
+            <button class="btn btn-primary" @onclick="SearchProduct">Search</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(xpathQuery))
+        {
+            <div class="alert alert-warning">
+                <strong>Executed XPath Query:</strong>
+                <pre class="mb-0 mt-2"><code>@xpathQuery</code></pre>
+            </div>
+        }
+
+        @if (searchResult != null)
+        {
+            <div class="alert alert-info" style="white-space: pre-wrap; word-wrap: break-word;">
+                <strong>Result:</strong>
+                <div>@searchResult</div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("Laptop"))">Laptop</code> - normal search (finds product)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("' or '1'='1"))">' or '1'='1</code> - return all products</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("'] | //admin/*[name()!='"))">'] | //admin/*[name()!='</code> - extract admin credentials</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("'] | //database/*[name()!='"))">'] | //database/*[name()!='</code> - extract database credentials</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("'] | //users/user[name()!='"))">'] | //users/user[name()!='</code> - extract user data</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetProductName("'] | //credentials//*[name()!='"))">'] | //credentials//*[name()!='</code> - extract API credentials</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>The code concatenates user input directly into XPath queries. This allows attackers to inject XPath operators to manipulate query structure.</p>
+        
+        <h6 class="mt-3">Sample XML structure:</h6>
+        <pre class="bg-light p-2 small"><code>&lt;catalog&gt;
+  &lt;product&gt;
+    &lt;name&gt;Laptop&lt;/name&gt;
+    &lt;price&gt;1299&lt;/price&gt;
+    &lt;cost&gt;800&lt;/cost&gt;
+  &lt;/product&gt;
+  &lt;admin&gt;
+    &lt;username&gt;admin&lt;/username&gt;
+    &lt;password&gt;P@@ssw0rd123&lt;/password&gt;
+  &lt;/admin&gt;
+&lt;/catalog&gt;</code></pre>
+
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: ' or '1'='1
+
+Query becomes:
+//product[name='' or '1'='1']
+
+Result: Condition always TRUE, returns ALL products including hidden data!</code></pre>
+
+        <h6 class="mt-3">Union injection example:</h6>
+        <pre class="bg-light p-2 small"><code>Input: '] | //admin/*[name()!='
+
+Query becomes:
+//product[name=''] | //admin/*[name()!='']
+
+Result: Uses XPath union operator (|) to access different nodes!
+Returns both products AND all admin credential child elements.</code></pre>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Access to entire XML</strong> - traverse any node in document</li>
+            <li><strong>Sensitive data exposure</strong> - credentials, API keys, secrets</li>
+            <li><strong>Authentication bypass</strong> - manipulate login queries</li>
+            <li><strong>Information disclosure</strong> - internal data, costs, suppliers</li>
+            <li><strong>Node enumeration</strong> - discover XML structure through blind injection</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against XPath Injection:</h5>
+        <ol>
+            <li><strong>Use LINQ to XML</strong> - strongly-typed queries with compile-time safety</li>
+            <li><strong>Parameterized XPath</strong> - use XPathNavigator with variable resolvers (complex)</li>
+            <li><strong>Avoid user-controlled XPath</strong> - use predefined queries when possible</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// CORRECT: Use LINQ to XML with strongly-typed queries
+var products = XDocument.Load(\"products.xml\
+    .Descendants(\"product\
+    .Where(p => p.Element(\"name\?.Value == productName)
+    .Select(p => new
+    {
+        Name = p.Element(\"name\?.Value,
+        Price = p.Element(\"price\?.Value
+    });
+
+// Input: ' or '1'='1
+// productName parameter = \"' or '1'='1\" (treated as literal string)
+// Searches for product with name literally matching \"' or '1'='1\"
+// Returns nothing - attack prevented!
+
+// Alternative: XPathNavigator with parameterized context
+XmlDocument doc = new XmlDocument();
+doc.Load(\"products.xml\;
+
+XPathNavigator nav = doc.CreateNavigator();
+XPathExpression expr = nav.Compile(
+    \"//product[name=$productName]\;
+
+// Create variable resolver
+var resolver = new CustomXsltContext();
+resolver.AddVariable(\"productName\", productName);
+expr.SetContext(resolver);
+
+var nodes = nav.Select(expr);
+""";
+    private const string VulnerableCode = """
+// DANGEROUS: String concatenation in XPath
+string xpathQuery = $\"//product[name='{productName}']\"; 
+
+XmlDocument doc = new XmlDocument();
+doc.Load(\"products.xml\;
+
+XmlNodeList nodes = doc.SelectNodes(xpathQuery);
+
+foreach (XmlNode node in nodes)
+{
+    Console.WriteLine(node.OuterXml);
+}
+
+// Input: ' or '1'='1
+// Resulting query:
+// //product[name='' or '1'='1']
+// Returns ALL products - filter bypassed!
+
+// Input: '] | //admin/*[name()!='
+// Resulting query:
+// //product[name=''] | //admin/*[name()!='']  
+// Accesses admin node with credentials!
+""";
+
+    private string productName = "";
+    private string? xpathQuery;
+    private string? searchResult;
+    private string? errorMessage;
+    private XmlDocument? xmlDoc;
+
+    protected override void OnInitialized()
+    {
+        var vulnerability = VulnerabilityService.GetBySlug("xpath-injection")
+            ?? throw new InvalidOperationException($"Vulnerability not found: xpath-injection");
+
+        LoadXmlDocument();
+    }
+
+    private void LoadXmlDocument()
+    {
+        try
+        {
+            xmlDoc = new XmlDocument();
+            var xmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "products.xml");
+            xmlDoc.Load(xmlPath);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load XML file: {ex.Message}";
+        }
+    }
+
+    private void SearchProduct()
+    {
+        searchResult = null;
+        xpathQuery = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(productName))
+        {
+            searchResult = "Please enter a product name";
+            return;
+        }
+
+        if (xmlDoc == null)
+        {
+            errorMessage = "XML document not loaded";
+            return;
+        }
+
+        xpathQuery = $"//product[name='{productName}']";
+
+        try
+        {
+            XmlNodeList? nodes = xmlDoc.SelectNodes(xpathQuery);
+
+            if (nodes == null || nodes.Count == 0)
+            {
+                searchResult = "No results found";
+                return;
+            }
+
+            var resultBuilder = new System.Text.StringBuilder();
+            
+            bool hasSensitiveData = false;
+            
+            foreach (XmlNode node in nodes)
+            {
+                if (node.Name == "admin" || node.Name == "database" || 
+                    node.Name == "credentials" || node.Name == "users" || node.Name == "user")
+                {
+                    hasSensitiveData = true;
+                }
+                
+                resultBuilder.AppendLine(FormatXmlNode(node));
+                resultBuilder.AppendLine();
+            }
+
+            if (hasSensitiveData)
+            {
+                searchResult = "XPATH INJECTION DETECTED!\n\n" +
+                              "Sensitive data exposed through XPath injection!\n\n" +
+                              $"Query executed: {xpathQuery}\n\n" +
+                              "=== SENSITIVE DATA EXPOSED ===\n\n" +
+                              resultBuilder.ToString() +
+                              "\n\nCRITICAL: This data should NEVER be accessible!";
+            }
+            else if (nodes.Count > 3)
+            {
+                searchResult = "XPATH INJECTION DETECTED!\n\n" +
+                              "Boolean-based XPath injection successful!\n\n" +
+                              $"Query executed: {xpathQuery}\n\n" +
+                              $"Result: {nodes.Count} products returned (including internal data)\n\n" +
+                              "=== ALL PRODUCTS EXPOSED ===\n\n" +
+                              resultBuilder.ToString();
+            }
+            else
+            {
+                searchResult = $"Found {nodes.Count} result(s):\n\n" + resultBuilder.ToString();
+            }
+        }
+        catch (XPathException ex)
+        {
+            errorMessage = $"XPath Error: {ex.Message}\n\nThis might indicate a malformed injection attempt.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error executing query: {ex.Message}";
+        }
+    }
+
+    private string FormatXmlNode(XmlNode node)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"<{node.Name}>");
+        
+        if (node.HasChildNodes)
+        {
+            bool hasElementChildren = false;
+            foreach (XmlNode child in node.ChildNodes)
+            {
+                if (child.NodeType == XmlNodeType.Element)
+                {
+                    hasElementChildren = true;
+                    sb.AppendLine($"  <{child.Name}>{child.InnerText}</{child.Name}>");
+                }
+            }
+            
+            if (!hasElementChildren && !string.IsNullOrWhiteSpace(node.InnerText))
+            {
+                sb.AppendLine($"  {node.InnerText}");
+            }
+        }
+        
+        sb.Append($"</{node.Name}>");
+        return sb.ToString();
+    }
+
+    private void SetProductName(string name)
+    {
+        productName = name;
+        searchResult = null;
+        xpathQuery = null;
+        errorMessage = null;
+    }
+}

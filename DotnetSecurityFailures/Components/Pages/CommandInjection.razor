@@ -1,0 +1,152 @@
+@page "/vulnerabilities/command-injection"
+@rendermode InteractiveServer
+@using DotnetSecurityFailures.Services
+@inject VulnerableCommandService CommandService
+@inject VulnerabilityService VulnerabilityService
+
+<PageTitle>Command Injection - .NET Security</PageTitle>
+
+<VulnerabilityLayout Slug="command-injection" VulnerableCode="@VulnerableCode" SafeCode="@SafeCode">
+    <DemoContent>
+        <div class="mb-3">
+            <label for="usertext" class="form-label">Enter text to process:</label>
+            <input type="text" class="form-control" id="usertext" @bind="userInput" 
+                   placeholder="hello world" />
+        </div>
+        <button class="btn btn-primary" @onclick="ProcessText">Process Text</button>
+
+        @if (!string.IsNullOrEmpty(executedCommand))
+        {
+            <div class="alert alert-warning mt-3">
+                <strong>Executed Command:</strong>
+                <pre class="mb-0 mt-2"><code>@executedCommand</code></pre>
+            </div>
+        }
+
+        @if (commandResult != null)
+        {
+            <div class="alert alert-info mt-3" style="white-space: pre-wrap; word-wrap: break-word;">
+                <strong>Result:</strong>
+                <div>@commandResult</div>
+            </div>
+        }
+
+        <div class="alert alert-dark mt-3">
+            <strong>Try these inputs:</strong>
+            <ul class="mb-0">
+                <li><code style="cursor: pointer;" @onclick="@(() => SetInput("hello world"))">hello world</code> - normal processing</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetInput("test & calc"))">test & calc</code> - open calculator (Windows)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetInput("test & dir"))">test & dir</code> - list directory contents (Windows)</li>
+                <li><code style="cursor: pointer;" @onclick="@(() => SetInput("test && whoami"))">test && whoami</code> - get current user</li>
+            </ul>
+        </div>
+    </DemoContent>
+
+    <ExplanationContent>
+        <p>The application passes user input directly to a system command without validation. 
+        Special characters like <code>&</code>, <code>;</code>, <code>|</code>, and <code>&&</code> 
+        allow execution of arbitrary commands.</p>
+        
+        <h6 class="mt-3">How the attack works:</h6>
+        <pre class="bg-light p-2 small"><code>Input: test & calc
+
+Command becomes:
+cmd.exe /c echo Processing: test & calc
+
+Result: Echoes "Processing: test" AND opens calculator</code></pre>
+
+        <h6 class="mt-3">Command operators:</h6>
+        <ul class="small">
+            <li><code>&</code> - Execute both commands (Windows)</li>
+            <li><code>&&</code> - Execute second if first succeeds</li>
+            <li><code>|</code> - Pipe output to next command</li>
+            <li><code>;</code> - Command separator (Linux/Unix)</li>
+            <li><code>||</code> - Execute second if first fails</li>
+        </ul>
+        
+        <h6 class="mt-4">Real-world consequences:</h6>
+        <ul>
+            <li><strong>Execute arbitrary commands</strong> - run any system program</li>
+            <li><strong>Read sensitive files</strong> - passwords, configs, keys</li>
+            <li><strong>Data exfiltration</strong> - upload data to attacker's server</li>
+            <li><strong>Modify/delete files</strong> - destroy data or plant backdoors</li>
+            <li><strong>Complete system compromise</strong> - remote code execution (RCE)</li>
+        </ul>
+    </ExplanationContent>    <PreventionContent>
+        <h5>Protection Against Command Injection:</h5>
+        <ol>
+            <li><strong>Avoid shell commands</strong> - use .NET libraries instead of external processes</li>
+            <li><strong>Input validation</strong> - whitelist allowed characters using regex</li>
+            <li><strong>Use ArgumentList</strong> - pass arguments separately, not as concatenated string</li>
+            <li><strong>Disable shell execution</strong> - set UseShellExecute = false</li>
+            <li><strong>Principle of least privilege</strong> - run application with minimal permissions</li>
+            <li><strong>Escape special characters</strong> - if shell commands are absolutely unavoidable</li>
+            <li><strong>Use allow-lists</strong> - validate input against known-good patterns only</li>
+        </ol>
+    </PreventionContent>
+</VulnerabilityLayout>
+
+@code {
+    private const string SafeCode = """
+// 1. Best: Avoid shell commands entirely
+// Use .NET libraries instead
+var result = $\"Processing: {userInput}\";
+return result;
+
+// 2. If shell needed, use ArgumentList (not Arguments string)
+var processInfo = new ProcessStartInfo
+{
+    FileName = \"cmd.exe\",
+    // ArgumentList passes each arg separately
+    ArgumentList = { \"/c\", \"echo\", \"Processing:\", userInput },
+    UseShellExecute = false,
+    RedirectStandardOutput = true
+};
+
+// Input: test & calc
+// Argument passed as: \"test & calc\" (literal string)
+// No command injection - attack prevented!
+""";
+    private const string VulnerableCode = """
+var processInfo = new ProcessStartInfo
+{
+    FileName = \"cmd.exe\",
+    Arguments = $\"/c echo Processing: {userInput}\",
+    RedirectStandardOutput = true,
+    UseShellExecute = false
+};
+
+using var process = Process.Start(processInfo);
+var output = process.StandardOutput.ReadToEnd();
+
+// Input: test & calc
+// Resulting command:
+// cmd.exe /c echo Processing: test & calc
+// Executes BOTH commands - security bypassed!
+""";
+    private string userInput = "";
+    private string? executedCommand;
+    private string? commandResult;
+
+    private void ProcessText()
+    {
+        commandResult = null;
+        executedCommand = null;
+
+        if (string.IsNullOrWhiteSpace(userInput))
+        {
+            commandResult = "Please enter some text";
+            return;
+        }
+
+        executedCommand = CommandService.GetExecutedCommand(userInput);
+        commandResult = CommandService.ExecuteCommandVulnerable(userInput);
+    }
+
+    private void SetInput(string text)
+    {
+        userInput = text;
+        commandResult = null;
+        executedCommand = null;
+    }
+}
