@@ -1,4 +1,4 @@
-﻿# .NET Security Vulnerabilities - Educational Application
+﻿# The Most Vulnerable .NET App - Educational Project
 
 This application contains intentionally vulnerable code for educational purposes only!
  
