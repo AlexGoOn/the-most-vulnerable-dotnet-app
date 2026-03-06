@@ -122,25 +122,25 @@ var products = XDocument.Load(\"products.xml\
 
 // Alternative: XPathNavigator with parameterized context
 XmlDocument doc = new XmlDocument();
-doc.Load(\"products.xml\;
+doc.Load("products.xml");
 
 XPathNavigator nav = doc.CreateNavigator();
 XPathExpression expr = nav.Compile(
-    \"//product[name=$productName]\;
+    "//product[name=$productName]");
 
 // Create variable resolver
 var resolver = new CustomXsltContext();
-resolver.AddVariable(\"productName\", productName);
+resolver.AddVariable("productName", productName);
 expr.SetContext(resolver);
 
 var nodes = nav.Select(expr);
 """;
     private const string VulnerableCode = """
 // DANGEROUS: String concatenation in XPath
-string xpathQuery = $\"//product[name='{productName}']\"; 
+string xpathQuery = $"//product[name='{productName}']"; 
 
 XmlDocument doc = new XmlDocument();
-doc.Load(\"products.xml\;
+doc.Load("products.xml");
 
 XmlNodeList nodes = doc.SelectNodes(xpathQuery);
 

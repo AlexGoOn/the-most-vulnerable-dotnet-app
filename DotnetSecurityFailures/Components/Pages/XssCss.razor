@@ -137,11 +137,11 @@ private void SafeApplyStyleAdvanced()
     
     // Configure allowed CSS properties
     sanitizer.AllowedCssProperties.Clear();
-    sanitizer.AllowedCssProperties.Add("color;
+    sanitizer.AllowedCssProperties.Add("color");
     
     // Sanitize the entire HTML including style
     var safeHtml = sanitizer.Sanitize(
-        $"<div style=\"color: {colorInput}\"><Custom Styled Content/div>;
+        $"<div style=\"color: {colorInput}\">Custom Styled Content</div>");
     
     renderedHtml = safeHtml;
 }

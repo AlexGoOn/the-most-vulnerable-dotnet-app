@@ -120,11 +120,11 @@ Result: Free items + bonus points!</code></pre>
 public bool PurchaseItems(int quantity)
 {
     if (quantity <= 0 || quantity > 10_000)
-        throw new ArgumentException("Invalid quantity;
+        throw new ArgumentException("Invalid quantity");
     
     // Check if multiplication would overflow
     if (quantity > int.MaxValue / ItemPrice)
-        throw new OverflowException("Total cost too large;
+        throw new OverflowException("Total cost too large");
     
     int totalCost = ItemPrice * quantity;
     

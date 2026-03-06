@@ -113,7 +113,7 @@ public async Task<string> RenderEmail(
 {
     var templatePath = Path.Combine(
         "Templates", 
-        Path.GetFileName(templateName) + ".cshtml;
+        Path.GetFileName(templateName) + ".cshtml");
     
     string template = await File.ReadAllTextAsync(templatePath);
     
@@ -124,8 +124,8 @@ public async Task<string> RenderEmail(
     // Data is passed as model, not part of template
     var model = new TemplateModel
     {
-        Name = data["name"]),
-        Balance = data["balance
+        Name = data["name"],
+        Balance = data["balance"]
     };
     
     return await engine.CompileRenderStringAsync(

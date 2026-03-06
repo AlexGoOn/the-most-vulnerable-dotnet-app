@@ -110,44 +110,44 @@ Result: Unauthorized action performed!</code></pre>
 
 // 1. Configure in Program.cs
 builder.Services.AddAntiforgery(options =>
-{{
+{
     options.HeaderName = "X-CSRF-TOKEN";
     options.Cookie.SameSite = SameSiteMode.Strict;
     options.Cookie.HttpOnly = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-}});
+});
 
 app.UseAntiforgery();
 
 // 2. Controller with AutoValidateAntiforgeryToken
 [ApiController]
-[Route("api/[controller]]
+[Route("api/[controller]")]
 [AutoValidateAntiforgeryToken]
 public class SecureController : ControllerBase
-{{
-    [HttpPost("purchase]
+{
+    [HttpPost("purchase")]
     public IActionResult PurchaseProduct([FromBody] PurchaseRequest request)
-    {{
+    {
         // AutoValidateAntiforgeryToken validates automatically
-        return Ok(new {{ success = true }});
-    }}
-}}
+        return Ok(new { success = true });
+    }
+}
 
 // 3. Blazor Server (AUTOMATICALLY PROTECTED)
-<EditForm Model="@@model" OnValidSubmit="HandleSubmit">
+<EditForm Model="@model" OnValidSubmit="HandleSubmit">
     <button type="submit">Purchase</button>
 </EditForm>
 """;
     private const string VulnerableCode = """
 // DANGEROUS: No CSRF protection + vulnerable CORS policy
 [ApiController]
-[Route("api/[controller]]
-[EnableCors("VulnerablePolicy] // Allows ANY origin!
+[Route("api/[controller]")]
+[EnableCors("VulnerablePolicy")] // Allows ANY origin!
 public class VulnerableController : ControllerBase
-{{
-    [HttpPost("purchase]
+{
+    [HttpPost("purchase")]
     public IActionResult PurchaseProduct([FromBody] PurchaseRequest request)
-    {{
+    {
         // NO CSRF TOKEN VALIDATION!
         // NO Origin header validation!
         // Browser automatically sends auth cookies
@@ -155,9 +155,9 @@ public class VulnerableController : ControllerBase
         var userId = User.FindFirst(ClaimTypes.NameIdentifier).Value;
         _paymentService.ProcessPayment(userId, request.Amount);
         
-        return Ok(new {{ success = true }});
-    }}
-}}
+        return Ok(new { success = true });
+    }
+}
 
 //in Program.cs
 builder.Services.AddCors(options =>

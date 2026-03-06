@@ -96,7 +96,7 @@ builder.Services
     .AddJwtBearer(options =>
     {
         var key = Encoding.UTF8.GetBytes(
-            builder.Configuration[\"Jwt:SecretKey\"]!);
+            builder.Configuration["Jwt:SecretKey"]!);
         
         options.TokenValidationParameters = new()
         {
@@ -109,12 +109,12 @@ builder.Services
     });
 
 [Authorize]
-[HttpGet(\"protected\]
+[HttpGet("protected")]
 public IActionResult GetData() => Ok();
 """;
     private const string VulnerableCode = """
 // Manual JWT parsing without signature validation
-[HttpPost(\"validate\]
+[HttpPost("validate")]
 public IActionResult ValidateToken([FromBody] string token)
 {
     var parts = token.Split('.');

@@ -123,14 +123,14 @@
 using FileSignatures;
 using FileSignatures.Formats;
 
-[HttpPost("upload]
+[HttpPost("upload")]
 public IActionResult Upload([FromBody] FileUploadRequest request)
 {
     // 1. Whitelist allowed extensions
     var allowedExtensions = new[] { ".jpg", ".png", ".pdf" };
     var extension = Path.GetExtension(request.Filename).ToLowerInvariant();
     if (!allowedExtensions.Contains(extension))
-        return BadRequest("File type not allowed;
+        return BadRequest("File type not allowed");
     
     // 2. Validate magic bytes using FileSignatures library
     var fileBytes = Convert.FromBase64String(request.ContentBase64);
@@ -138,7 +138,7 @@ public IActionResult Upload([FromBody] FileUploadRequest request)
     var format = inspector.DetermineFileFormat(new MemoryStream(fileBytes));
     
     if (format == null)
-        return BadRequest("Unable to determine file type;
+        return BadRequest("Unable to determine file type");
     
     // Verify format matches extension
     var isValidFormat = (extension, format) switch
@@ -150,7 +150,7 @@ public IActionResult Upload([FromBody] FileUploadRequest request)
     };
     
     if (!isValidFormat)
-        return BadRequest("File content does not match extension;
+        return BadRequest("File content does not match extension");
     
     // Generate safe random filename
     var fileId = Guid.NewGuid().ToString();
@@ -162,7 +162,7 @@ public IActionResult Upload([FromBody] FileUploadRequest request)
 }
 
 // CORRECT: Serve with safe Content-Type and security headers
-[HttpGet("view/{fileId}]
+[HttpGet("view/{fileId}")]
 public IActionResult ViewFile(string fileId)
 {
     if (!UploadedFiles.TryGetValue(fileId, out var uploadedFile))
@@ -180,12 +180,12 @@ public IActionResult ViewFile(string fileId)
     Response.Headers["Content-Security-Policy"] = "default-src 'none'";
     
     // Serve as plain text or force download
-    return File(fileBytes, "text/plain;
+    return File(fileBytes, "text/plain");
 }
 """;
     private const string VulnerableCode = """
 // DANGEROUS: No file validation on upload
-[HttpPost("upload]
+[HttpPost("upload")]
 public IActionResult Upload([FromBody] FileUploadRequest request)
 {
     var fileId = Guid.NewGuid().ToString();
@@ -197,7 +197,7 @@ public IActionResult Upload([FromBody] FileUploadRequest request)
 }
 
 // DANGEROUS: Serves files as text/html without validation
-[HttpGet("view/{fileId}]
+[HttpGet("view/{fileId}")]
 public IActionResult ViewFile(string fileId)
 {
     if (!UploadedFiles.TryGetValue(fileId, out var uploadedFile))
@@ -207,7 +207,7 @@ public IActionResult ViewFile(string fileId)
     
     // VULNERABLE: Always serves as text/html!
     // Scripts in uploaded files will execute in user's browser
-    return File(fileBytes, "text/html;
+    return File(fileBytes, "text/html");
 }
 """;
 

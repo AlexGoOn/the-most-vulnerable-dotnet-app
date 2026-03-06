@@ -132,13 +132,13 @@ Result: Free products + refunds!</code></pre>
 public void AddItem(int quantity, decimal price)
 {
     if (quantity <= 0)
-        throw new ArgumentException("Quantity must be positive;
+        throw new ArgumentException("Quantity must be positive");
     
     if (price < 0)
-        throw new ArgumentException("Price cannot be negative;
+        throw new ArgumentException("Price cannot be negative");
     
     if (quantity > 1000)
-        throw new ArgumentException("Quantity exceeds maximum;
+        throw new ArgumentException("Quantity exceeds maximum");
     
     var item = new CartItem
     {

@@ -140,7 +140,7 @@ public string GetUserProfile(string username, string bio)
     private const string VulnerableCode = """
 // DANGEROUS: String concatenation for JSON
 public string GetUserProfile(string username, string bio)
-{{
+{
     // Building JSON manually - VULNERABLE!
     var json = "{" + Environment.NewLine +
                $"  \"username\": \"{username}\"," + Environment.NewLine +
@@ -149,7 +149,7 @@ public string GetUserProfile(string username, string bio)
                "  \"isAdmin\": false" + Environment.NewLine +
                "}";
     return json;
-}}
+}
 """;
 
     private Vulnerability? vulnerability;

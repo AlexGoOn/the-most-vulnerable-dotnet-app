@@ -172,7 +172,7 @@ app.UseRateLimiter();
 """;
     private const string VulnerableCode = """
 // VULNERABLE - No rate limiting
-[HttpPost("api/brute-force/login]
+[HttpPost("api/brute-force/login")]
 public IActionResult Login([FromBody] LoginRequest request)
 {
     // DANGEROUS: No throttling, no CAPTCHA, no account lockout
@@ -198,12 +198,12 @@ for (int i = 0; i < 10000; i++)
 {
     var response = await httpClient.PostAsync(
         "/api/brute-force/login",
-        new { username = "victim@example.com", pin = i.ToString("D4 }
+        new { username = "victim@example.com", pin = i.ToString("D4") }
     );
     
     if (response.IsSuccessStatusCode)
     {
-        Console.WriteLine($"Found PIN: {i:D4};
+        Console.WriteLine($"Found PIN: {i:D4}");
         break;
     }
     // NO DELAYS - all 10,000 attempts complete in seconds!

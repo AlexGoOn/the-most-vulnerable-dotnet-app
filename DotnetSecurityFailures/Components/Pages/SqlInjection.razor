@@ -103,12 +103,12 @@ var sql = \"SELECT * FROM Users \" +
 
 using var command = _connection.CreateCommand();
 command.CommandText = sql;
-command.Parameters.AddWithValue(\"@Username\", username);
+command.Parameters.AddWithValue("@Username", username);
 using var reader = command.ExecuteReader();
 
 // Input: admin' OR '1'='1
-// Username parameter = \"admin' OR '1'='1\" (treated as literal string)
-// Query safely searches for username literally matching \"admin' OR '1'='1\"
+// Username parameter = "admin' OR '1'='1" (treated as literal string)
+// Query safely searches for username literally matching "admin' OR '1'='1"
 // Returns nothing - attack prevented!
 
 // Even better: Entity Framework Core

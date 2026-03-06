@@ -91,29 +91,28 @@ Result: Injected Set-Cookie header!</code></pre>
 
 @code {
     private const string SafeCode = """
-[HttpGet("safe]
+[HttpGet("safe")]
 public IActionResult SafeRedirect([FromQuery] string url)
 {
     // Validate URL is relative and doesn't contain suspicious characters
     if (string.IsNullOrEmpty(url) || url.Contains('\r') || url.Contains('\n'))
     {
-        return BadRequest("Invalid URL;
+        return BadRequest("Invalid URL");
     }
     
     // Validate it's a local URL (prevent open redirect)
     if (!Url.IsLocalUrl(url))
     {
-        return BadRequest("Only local URLs are allowed;
+        return BadRequest("Only local URLs are allowed");
     }
     
     // Use built-in Redirect - automatically sanitizes CRLF
     return Redirect(url);
 }
-}
 """;
     private const string VulnerableCode = """
 // DANGEROUS: Building HTTP response with user input
-[HttpGet("vulnerable]
+[HttpGet("vulnerable")]
 public async Task VulnerableRedirect([FromQuery] string url)
 {
     // DANGER: URL decode to convert %0d%0a to actual CRLF

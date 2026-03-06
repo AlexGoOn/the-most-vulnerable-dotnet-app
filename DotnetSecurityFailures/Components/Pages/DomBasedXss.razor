@@ -161,9 +161,9 @@ var result = expression.Evaluate();
 
 // SAFE 2: Use textContent instead of innerHTML
 
-await JS.InvokeVoidAsync(\"eval\",
-
-    \"document.getElementById('output').textContent = '\" + userInput + \"'\;
+await JS.InvokeVoidAsync(
+    "eval",
+    "document.getElementById('output').textContent = '" + userInput + "'");
 
 // Result: HTML is escaped, no XSS possible
 
@@ -181,9 +181,9 @@ var sanitizer = new HtmlSanitizer();
 
 string safeHtml = sanitizer.Sanitize(userInput);
 
-await JS.InvokeVoidAsync(\"eval\",
-
-    \"document.getElementById('output').innerHTML = '\" + safeHtml + \"'\;
+await JS.InvokeVoidAsync(
+    "eval",
+    "document.getElementById('output').innerHTML = '" + safeHtml + "'");
 
 
 
@@ -191,18 +191,18 @@ await JS.InvokeVoidAsync(\"eval\",
 
 // Let Blazor handle HTML encoding automatically
 
-<div>@@userInput</div>
+<div>@userInput</div>
 
 // Result: Automatically HTML-encoded, safe!
 """;
     private const string VulnerableCode = """
 // VULNERABLE 1: Direct eval() call
 
-@@inject IJSRuntime JS
+@inject IJSRuntime JS
 
 
 
-await JS.InvokeVoidAsync(\"eval\", userInput);
+await JS.InvokeVoidAsync("eval", userInput);
 
 // Attack: alert('XSS')
 
@@ -216,9 +216,9 @@ await JS.InvokeVoidAsync(\"eval\", userInput);
 
 var base64Html = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(userInput));
 
-await JS.InvokeVoidAsync(\"eval\",
-
-    $\"document.getElementById('output').innerHTML = atob('{base64Html}')\;
+await JS.InvokeVoidAsync(
+    "eval",
+    $"document.getElementById('output').innerHTML = atob('{base64Html}')");
 
 // Attack: <img src=x onerror=alert('XSS')>
 

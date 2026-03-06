@@ -90,28 +90,28 @@ Result: Echoes "Processing: test" AND opens calculator</code></pre>
     private const string SafeCode = """
 // 1. Best: Avoid shell commands entirely
 // Use .NET libraries instead
-var result = $\"Processing: {userInput}\";
+var result = $"Processing: {userInput}";
 return result;
 
 // 2. If shell needed, use ArgumentList (not Arguments string)
 var processInfo = new ProcessStartInfo
 {
-    FileName = \"cmd.exe\",
+    FileName = "cmd.exe",
     // ArgumentList passes each arg separately
-    ArgumentList = { \"/c\", \"echo\", \"Processing:\", userInput },
+    ArgumentList = { "/c", "echo", "Processing:", userInput },
     UseShellExecute = false,
     RedirectStandardOutput = true
 };
 
 // Input: test & calc
-// Argument passed as: \"test & calc\" (literal string)
+// Argument passed as: "test & calc" (literal string)
 // No command injection - attack prevented!
 """;
     private const string VulnerableCode = """
 var processInfo = new ProcessStartInfo
 {
-    FileName = \"cmd.exe\",
-    Arguments = $\"/c echo Processing: {userInput}\",
+    FileName = "cmd.exe",
+    Arguments = $"/c echo Processing: {userInput}",
     RedirectStandardOutput = true,
     UseShellExecute = false
 };

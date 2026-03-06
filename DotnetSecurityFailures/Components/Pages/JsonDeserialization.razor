@@ -86,7 +86,7 @@ Result: Complete server takeover!</code></pre>
 
 using System.Text.Json;
 
-[HttpPost("api/process]
+[HttpPost("api/process")]
 public IActionResult ProcessData([FromBody] string json)
 {
     try
@@ -96,13 +96,13 @@ public IActionResult ProcessData([FromBody] string json)
         var data = JsonSerializer.Deserialize<UserData>(json);
         
         if (data == null)
-            return BadRequest("Invalid JSON;
+            return BadRequest("Invalid JSON");
         
         return Ok(data);
     }
     catch (JsonException ex)
     {
-        return BadRequest($"Invalid JSON: {ex.Message};
+        return BadRequest($"Invalid JSON: {ex.Message}");
     }
 }
 """;
@@ -111,7 +111,7 @@ public IActionResult ProcessData([FromBody] string json)
 
 using Newtonsoft.Json;
 
-[HttpPost("api/process]
+[HttpPost("api/process")]
 public IActionResult ProcessData([FromBody] string json)
 {
     // VULNERABLE: Allows attacker to control type instantiation

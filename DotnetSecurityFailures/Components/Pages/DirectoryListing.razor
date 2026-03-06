@@ -103,28 +103,28 @@
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(
-        Path.Combine(env.WebRootPath, \"public\),
-    RequestPath = \"/public\",
+        Path.Combine(env.WebRootPath, "public")),
+    RequestPath = "/public",
     ServeUnknownFileTypes = false
 });
 
 // IIS web.config
 <configuration>
   <system.webServer>
-    <directoryBrowse enabled=\"false\" />
+    <directoryBrowse enabled="false" />
     
     <security>
       <requestFiltering>
         <hiddenSegments>
-          <add segment=\".git\" />
-          <add segment=\".env\" />
-          <add segment=\"logs\" />
+          <add segment=".git" />
+          <add segment=".env" />
+          <add segment="logs" />
         </hiddenSegments>
         <fileExtensions>
-          <add fileExtension=\".config\" allowed=\"false\" />
-          <add fileExtension=\".cs\" allowed=\"false\" />
-          <add fileExtension=\".log\" allowed=\"false\" />
-          <add fileExtension=\".json\" allowed=\"false\" />
+          <add fileExtension=".config" allowed="false" />
+          <add fileExtension=".cs" allowed="false" />
+          <add fileExtension=".log" allowed="false" />
+          <add fileExtension=".json" allowed="false" />
         </fileExtensions>
       </requestFiltering>
     </security>
@@ -144,7 +144,7 @@ public IActionResult DownloadFile(string filename)
         return Forbid();
     
     var path = GetSecureFilePath(filename);
-    return PhysicalFile(path, \"application/octet-stream\;
+    return PhysicalFile(path, "application/octet-stream");
 }
 
 // Store sensitive files OUTSIDE web root
@@ -160,20 +160,20 @@ builder.Services.AddDirectoryBrowser();
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(
-        Path.Combine(env.WebRootPath, \"uploads\),
-    RequestPath = \"/uploads\"
+        Path.Combine(env.WebRootPath, "uploads")),
+    RequestPath = "/uploads"
 });
 app.UseDirectoryBrowser(new DirectoryBrowserOptions
 {
     FileProvider = new PhysicalFileProvider(
-        Path.Combine(env.WebRootPath, \"uploads\),
-    RequestPath = \"/uploads\"
+        Path.Combine(env.WebRootPath, "uploads")),
+    RequestPath = "/uploads"
 });
 
 // IIS web.config
 <configuration>
   <system.webServer>
-    <directoryBrowse enabled=\"true\" />
+    <directoryBrowse enabled="true" />
     <!-- Allows listing all files! -->
   </system.webServer>
 </configuration>

@@ -105,13 +105,13 @@ public class RegistrationRequest
     // No Role property
 }
 
-[HttpPost(\"register\]
+[HttpPost("register")]
 public IActionResult Register(RegistrationRequest req)
 {
     var user = new User
     {
         Username = req.Username,
-        Role = \"User\", // Hardcoded default
+        Role = "User", // Hardcoded default
         CreatedAt = DateTime.UtcNow
     };
     _context.Users.Add(user);
@@ -119,13 +119,13 @@ public IActionResult Register(RegistrationRequest req)
 }
 
 // Separate admin endpoint
-[Authorize(Roles = \"SuperAdmin\]
-[HttpPost(\"promote-user\]
+[Authorize(Roles = "SuperAdmin")]
+[HttpPost("promote-user")]
 public IActionResult PromoteUser(int userId, string newRole)
 {
     var user = _context.Users.Find(userId);
     user.Role = newRole;
-    _auditLog.Log($\"Role changed: {userId} -> {newRole}\;
+    _auditLog.Log($"Role changed: {userId} -> {newRole}");
     return Ok();
 }
 """;
@@ -138,13 +138,13 @@ public class RegistrationRequest
     public string? Role { get; set; } // User-controlled!
 }
 
-[HttpPost(\"register\]
+[HttpPost("register")]
 public IActionResult Register(RegistrationRequest req)
 {
     var user = new User
     {
         Username = req.Username,
-        Role = req.Role ?? \"User\" // VULNERABILITY!
+        Role = req.Role ?? "User" // VULNERABILITY!
     };
     _context.Users.Add(user);
     return Ok();

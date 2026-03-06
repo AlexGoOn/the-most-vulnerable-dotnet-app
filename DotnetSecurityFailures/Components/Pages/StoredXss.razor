@@ -117,11 +117,11 @@ public class CommentService
         
         // Allow only safe HTML tags
         _sanitizer.AllowedTags.Clear();
-        _sanitizer.AllowedTags.Add("b;
-        _sanitizer.AllowedTags.Add("i;
-        _sanitizer.AllowedTags.Add("em;
-        _sanitizer.AllowedTags.Add("strong;
-        _sanitizer.AllowedTags.Add("p;
+        _sanitizer.AllowedTags.Add("b");
+        _sanitizer.AllowedTags.Add("i");
+        _sanitizer.AllowedTags.Add("em");
+        _sanitizer.AllowedTags.Add("strong");
+        _sanitizer.AllowedTags.Add("p");
     }
     
     public void AddComment(string username, string text)

@@ -103,7 +103,7 @@ public void Login(string username, string password)
     {
         // Parameterized logging - automatically escaped
         _logger.LogWarning(
-            \"Failed login attempt for user: {Username}\", 
+            "Failed login attempt for user: {Username}", 
             username  // Newlines will be escaped
         );
         throw new UnauthorizedAccessException();
@@ -129,9 +129,9 @@ private string SanitizeForLog(string input)
 
 // Best: Structured logs (JSON format)
 _logger.LogInformation(
-    \"Login attempt: {User} {Result} {Timestamp}\",
+    "Login attempt: {User} {Result} {Timestamp}",
     username,
-    success ? \"SUCCESS\" : \"FAILED\",
+    success ? "SUCCESS" : "FAILED",
     DateTime.UtcNow
 );
 // Output: {\"User\":\"admin\",\"Result\":\"FAILED\",...}

@@ -96,7 +96,7 @@ public sealed class SafeConfigLoader
             throw new ArgumentNullException(nameof(yamlContent));
 
         if (yamlContent.Length > MaxYamlLength)
-            throw new SecurityException("YAML input too large;
+            throw new SecurityException("YAML input too large");
 
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)

@@ -124,7 +124,7 @@ public class UpdateProfileRequest
 }
 
 [Authorize]
-[HttpPost("update])
+[HttpPost("update")]
 public IActionResult UpdateProfile(
     [FromBody] UpdateProfileRequest request)
 {
@@ -139,7 +139,7 @@ public IActionResult UpdateProfile(
 
 // Alternative: Use [Bind] attribute
 [Authorize]
-[HttpPost("update])
+[HttpPost("update")]
 public IActionResult UpdateProfile(
     [Bind("Name,Email")] UserProfile model)
 {

@@ -144,20 +144,20 @@ public IActionResult UploadIcon(IFormFile file)
     var sanitizer = new HtmlSanitizer();
     
     // Remove dangerous tags
-    sanitizer.AllowedTags.Remove(\"script\;
-    sanitizer.AllowedTags.Remove(\"foreignObject\;
-    sanitizer.AllowedTags.Remove(\"use\;
+    sanitizer.AllowedTags.Remove("script");
+    sanitizer.AllowedTags.Remove("foreignObject");
+    sanitizer.AllowedTags.Remove("use");
     
     // Remove event handlers
-    sanitizer.AllowedAttributes.Remove(\"onload\;
-    sanitizer.AllowedAttributes.Remove(\"onclick\;
-    sanitizer.AllowedAttributes.Remove(\"onerror\;
-    sanitizer.AllowedAttributes.Remove(\"onbegin\;
+    sanitizer.AllowedAttributes.Remove("onload");
+    sanitizer.AllowedAttributes.Remove("onclick");
+    sanitizer.AllowedAttributes.Remove("onerror");
+    sanitizer.AllowedAttributes.Remove("onbegin");
     
     // Sanitize
     var safeSvg = sanitizer.Sanitize(svgContent);
     
-    return Content(safeSvg, \"image/svg+xml\;
+    return Content(safeSvg, "image/svg+xml");
 }
 
 
@@ -193,15 +193,15 @@ public byte[] ConvertSvgToPng(string svgContent)
 public IActionResult UploadIcon(IFormFile file)
 {
     // BAD: Only checking file extension
-    if (Path.GetExtension(file.FileName) != \".svg\
-        return BadRequest(\"Only SVG allowed\;
+    if (Path.GetExtension(file.FileName) != ".svg")
+        return BadRequest("Only SVG allowed");
     
     // BAD: Storing without sanitization
     var svgContent = new StreamReader(file.OpenReadStream())
         .ReadToEnd();
     
     // BAD: Serving directly to users
-    return Content(svgContent, \"image/svg+xml\;
+    return Content(svgContent, "image/svg+xml");
 }
 
 
@@ -214,7 +214,7 @@ private void RenderSVG()
     renderedHtml = userSvg;
     
     // MarkupString renders raw HTML/SVG
-    // If userSvg = \"<svg onload=alert('XSS')></svg>\"
+    // If userSvg = "<svg onload=alert('XSS')></svg>"
     // The script will execute!
 }
 

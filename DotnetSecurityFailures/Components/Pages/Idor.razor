@@ -138,7 +138,7 @@
     private const string SafeCode = """
 // Verify ownership
 [Authorize]
-[HttpGet("/api/user/profile/{id}]
+[HttpGet("/api/user/profile/{id}")]
 public IActionResult GetProfile(int id)
 {
     var currentUserId = User.FindFirst(
@@ -160,7 +160,7 @@ public IActionResult GetProfile(int id)
 
 // Don't expose IDs at all
 [Authorize]
-[HttpGet("/api/user/profile]
+[HttpGet("/api/user/profile")]
 public IActionResult GetMyProfile()
 {
     var userId = User.FindFirst(
@@ -172,7 +172,7 @@ public IActionResult GetMyProfile()
 
 // Use resource-based authorization
 [Authorize]
-[HttpGet("/api/user/profile/{id}]
+[HttpGet("/api/user/profile/{id}")]
 public async Task<IActionResult> GetProfile(int id)
 {
     var user = await dbContext.Users
@@ -182,7 +182,7 @@ public async Task<IActionResult> GetProfile(int id)
         return NotFound();
     
     var authResult = await _authorizationService
-        .AuthorizeAsync(User, user, "ViewProfile;
+        .AuthorizeAsync(User, user, "ViewProfile");
     
     if (!authResult.Succeeded)
         return Forbid();
@@ -192,7 +192,7 @@ public async Task<IActionResult> GetProfile(int id)
 """;
     private const string VulnerableCode = """
 // DANGEROUS: No ownership verification
-[HttpGet("/api/user/profile/{id}]
+[HttpGet("/api/user/profile/{id}")]
 public IActionResult GetProfile(int id)
 {
     var user = dbContext.Users

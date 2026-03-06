@@ -143,11 +143,11 @@ string hashString = Convert.ToHexString(hash);
 
 // DANGEROUS: SHA1
 using var sha1 = SHA1.Create();
-byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(password));
+byte[] sha1Hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(password));
 
 // Even SHA256 WITHOUT SALT is bad for passwords
 using var sha256 = SHA256.Create();
-byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+byte[] sha256Hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
 // Fast ? easy to brute-force
 
 // Plain SHA256 without iterations

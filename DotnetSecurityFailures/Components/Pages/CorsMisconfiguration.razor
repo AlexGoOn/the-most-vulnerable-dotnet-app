@@ -128,9 +128,9 @@ public void ConfigureServices(IServiceCollection services)
             policy.WithOrigins(
                 "https://www.example.com",
                 "https://app.example.com",
-                "https://mobile.example.com
-            .WithMethods("GET", "POST
-            .WithHeaders("Content-Type", "Authorization
+                "https://mobile.example.com")
+            .WithMethods("GET", "POST")
+            .WithHeaders("Content-Type", "Authorization")
             .AllowCredentials();
         });
         
@@ -138,8 +138,8 @@ public void ConfigureServices(IServiceCollection services)
         options.AddPolicy("PublicAPI", policy =>
         {
             policy.AllowAnyOrigin() // Safe without credentials
-                  .WithMethods("GET
-                  .WithHeaders("Content-Type;
+                  .WithMethods("GET")
+                  .WithHeaders("Content-Type");
             // Never call .AllowCredentials() here!
         });
     });
@@ -147,11 +147,11 @@ public void ConfigureServices(IServiceCollection services)
 
 // Apply safe policy to controllers
 [ApiController]
-[Route("api/[controller]]
-[EnableCors("StrictPolicy] // Apply to entire controller
+[Route("api/[controller]")]
+[EnableCors("StrictPolicy")] // Apply to entire controller
 public class UserController : ControllerBase
 {
-    [HttpGet("balance]
+    [HttpGet("balance")]
     public IActionResult GetBalance()
     {
         // Only whitelisted origins can access
@@ -177,11 +177,11 @@ public void ConfigureServices(IServiceCollection services)
 
 // Applying vulnerable policy to endpoint
 [ApiController]
-[Route("api]
+[Route("api")]
 public class UserController : ControllerBase
 {
-    [HttpGet("user/balance]
-    [EnableCors("VulnerablePolicy] // Uses vulnerable policy
+    [HttpGet("user/balance")]
+    [EnableCors("VulnerablePolicy")] // Uses vulnerable policy
     public IActionResult GetBalance()
     {
         // Returns sensitive data

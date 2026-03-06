@@ -86,12 +86,12 @@
     private const string SafeCode = """
 // CORRECT: Generic errors to users, detailed logs
 [ApiController]
-[Route("api/errors]
+[Route("api/errors")]
 public class SafeErrorController : ControllerBase
 {
     private readonly ILogger<SafeErrorController> _logger;
     
-    [HttpGet("database]
+    [HttpGet("database")]
     public IActionResult TriggerDatabaseError([FromQuery] bool showVerbose = false)
     {
         try
@@ -102,7 +102,7 @@ public class SafeErrorController : ControllerBase
         catch (SqlException ex)
         {
             // Generate unique error ID for tracking
-            var errorId = Guid.NewGuid().ToString("N[..8];
+            var errorId = Guid.NewGuid().ToString("N")[..8];
             
             // Log detailed error server-side
             _logger.LogError(ex, 
@@ -124,10 +124,10 @@ public class SafeErrorController : ControllerBase
     private const string VulnerableCode = """
 // DANGEROUS: Exposing detailed errors to users
 [ApiController]
-[Route("api/errors]
+[Route("api/errors")]
 public class VulnerableErrorController : ControllerBase
 {
-    [HttpGet("database]
+    [HttpGet("database")]
     public IActionResult TriggerDatabaseError([FromQuery] bool showVerbose = false)
     {
         try
@@ -162,7 +162,7 @@ public class VulnerableErrorController : ControllerBase
                     }
                 });
             }
-            return StatusCode(500, "Error;
+            return StatusCode(500, "Error");
         }
     }
 }

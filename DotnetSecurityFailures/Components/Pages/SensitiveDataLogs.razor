@@ -84,7 +84,7 @@ public class UserService
     {
         // Log only non-sensitive data
         _logger.LogInformation(
-            \"Login attempt for user: {Username}\",
+            "Login attempt for user: {Username}",
             request.Username);  // Username only
         
         try
@@ -93,14 +93,14 @@ public class UserService
                 request.Username, request.Password);
             
             _logger.LogInformation(
-                \"Successful login for {Username}\",
+                "Successful login for {Username}",
                 request.Username);
         }
         catch (Exception ex)
         {
             // Don't log request details
             _logger.LogWarning(ex,
-                \"Login failed for user: {Username}\",
+                "Login failed for user: {Username}",
                 request.Username);
         }
     }
@@ -115,12 +115,12 @@ public class UserService
     {
         // Logging complete request object
         _logger.LogInformation(
-            \"Login attempt: {@Request}\", 
+            "Login attempt: {@Request}", 
             request);  // Contains password!
         
         // Logging raw password
         _logger.LogDebug(
-            \"User {Username} logging in with password {Password}\",
+            "User {Username} logging in with password {Password}",
             request.Username, 
             request.Password);  // NEVER!
     }

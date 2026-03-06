@@ -151,7 +151,7 @@ public class SafeOrderFilterService
     private Expression<Func<Order, bool>> BuildSafePredicate(
         FilterCriteria criteria)
     {
-        var parameter = Expression.Parameter(typeof(Order), "order;
+        var parameter = Expression.Parameter(typeof(Order), "order");
         
         // Whitelist allowed properties
         var allowedProps = new[] 
@@ -159,14 +159,14 @@ public class SafeOrderFilterService
             "Amount", "Status", "Customer", "OrderId" 
         };
         if (!allowedProps.Contains(criteria.Property))
-            throw new ArgumentException("Property not allowed;
+            throw new ArgumentException("Property not allowed");
         
         var property = Expression.Property(parameter, criteria.Property);
         var value = Expression.Constant(criteria.Value);
         
         // Whitelist allowed operators
         if (!AllowedOperators.ContainsKey(criteria.Operator))
-            throw new ArgumentException("Operator not allowed;
+            throw new ArgumentException("Operator not allowed");
         
         var comparison = AllowedOperators[criteria.Operator](
             property, value);
@@ -186,7 +186,7 @@ public async Task<List<Order>> FilterOrders(
 {
     var options = ScriptOptions.Default
         .WithReferences(typeof(Order).Assembly)
-        .WithImports("System", "System.IO", "System.Diagnostics;
+        .WithImports("System", "System.IO", "System.Diagnostics");
     
     foreach (var order in orders)
     {

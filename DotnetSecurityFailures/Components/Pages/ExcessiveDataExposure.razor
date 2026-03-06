@@ -122,12 +122,12 @@ public class UserPublicDto
 }
 
 [ApiController]
-[Route("api]
+[Route("api")]
 public class SecureDataExposureController : ControllerBase
 {
     private readonly AppDbContext _context;
 
-    [HttpGet("users/{id}]
+    [HttpGet("users/{id}")]
     public async Task<ActionResult<UserPublicDto>> GetUser(int id)
     {
         // SAFE: Project to DTO with only needed fields
@@ -155,10 +155,10 @@ public class SecureDataExposureController : ControllerBase
     private const string VulnerableCode = """
 // VULNERABLE - Returns entire entity with all fields
 [ApiController]
-[Route("api]
+[Route("api")]
 public class VulnerableDataExposureController : ControllerBase
 {
-    [HttpGet("users/{id}]
+    [HttpGet("users/{id}")]
     public async Task<IActionResult> GetUser(int id)
     {
         // DANGEROUS: Fetches all columns from database

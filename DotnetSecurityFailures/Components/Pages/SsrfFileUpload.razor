@@ -131,7 +131,7 @@ Result: Internal services accessed, credentials stolen!</code></pre>
 @code {
     private const string SafeCode = """
 // Demonstrates 
-[HttpPost("api/svg/process]
+[HttpPost("api/svg/process")]
 public async Task ProcessSvgSafely(Stream svgStream)
 {
     // 1. Disable external entity processing
@@ -143,13 +143,13 @@ public async Task ProcessSvgSafely(Stream svgStream)
     
     using var reader = XmlReader.Create(svgStream, settings);
     var doc = XDocument.Load(reader);
-    var ns = XNamespace.Get("http://www.w3.org/2000/svg;
+    var ns = XNamespace.Get("http://www.w3.org/2000/svg");
     
-    var images = doc.Descendants(ns + "image;
+    var images = doc.Descendants(ns + "image");
     
     foreach (var img in images)
     {
-        var href = img.Attribute("href?.Value;
+        var href = img.Attribute("href")?.Value;
         
         if (string.IsNullOrEmpty(href))
             continue;
@@ -158,13 +158,13 @@ public async Task ProcessSvgSafely(Stream svgStream)
         if (!href.StartsWith("data:", 
             StringComparison.OrdinalIgnoreCase))
         {
-            img.Attribute("href?.Remove();
+            img.Attribute("href")?.Remove();
             continue;
         }
         
         // 3. Validate data URI format
         if (!IsValidDataUri(href))
-            throw new SecurityException("Invalid data URI;
+            throw new SecurityException("Invalid data URI");
     }
 }
 
@@ -180,17 +180,17 @@ private bool IsValidDataUri(string uri)
 """;
     private const string VulnerableCode = """
 // VULNERABLE: Processes external refs
-[HttpPost("api/svg/process]
+[HttpPost("api/svg/process")]
 public async Task ProcessSvg(Stream svgStream)
 {
     var doc = XDocument.Load(svgStream);
-    var ns = XNamespace.Get("http://www.w3.org/2000/svg;
+    var ns = XNamespace.Get("http://www.w3.org/2000/svg");
     
-    var images = doc.Descendants(ns + "image;
+    var images = doc.Descendants(ns + "image");
     
     foreach (var img in images)
     {
-        var href = img.Attribute("href?.Value;
+        var href = img.Attribute("href")?.Value;
         
         if (!string.IsNullOrEmpty(href))
         {

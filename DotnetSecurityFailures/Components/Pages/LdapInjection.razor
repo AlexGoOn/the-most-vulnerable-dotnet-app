@@ -88,24 +88,24 @@ Result: Adds always-true condition, bypasses filter</code></pre>
 string EscapeLdapFilter(string input)
 {
     return input
-        .Replace(\"\\\\\", \"\\\\5c\
-        .Replace(\"*\", \"\\\\2a\
-        .Replace(\"(\", \"\\\\28\
-        .Replace(\\", \"\\\\29\
-        .Replace(\"\\0\", \"\\\\00\;
+        .Replace("\\", "\\5c")
+        .Replace("*", "\\2a")
+        .Replace("(", "\\28")
+        .Replace(")", "\\29")
+        .Replace("\0", "\\00");
 }
 
 string safeUsername = EscapeLdapFilter(username);
-string filter = $\"(&(objectClass=user)(cn={safeUsername}))\";
+string filter = $"(&(objectClass=user)(cn={safeUsername}))";
 
 // Input: *
-// Escaped: \\2a
-// Query: (&(objectClass=user)(cn=\\2a))
-// Searches for literal \"*\" - attack prevented!
+// Escaped: \2a
+// Query: (&(objectClass=user)(cn=\2a))
+// Searches for literal "*" - attack prevented!
 
 // Better: Use PrincipalContext with built-in escaping
 using var context = new PrincipalContext(
-    ContextType.Domain, \"company.com\;
+    ContextType.Domain, "company.com");
 UserPrincipal user = UserPrincipal.FindByIdentity(
     context, username);
 
@@ -113,9 +113,9 @@ UserPrincipal user = UserPrincipal.FindByIdentity(
 """;
     private const string VulnerableCode = """
 // DANGEROUS: String concatenation in LDAP filter
-string filter = $\"(&(objectClass=user)(cn={username}))\";
+string filter = $"(&(objectClass=user)(cn={username}))";
 
-using var entry = new DirectoryEntry(\"LDAP://DC=company,DC=com\;
+using var entry = new DirectoryEntry("LDAP://DC=company,DC=com");
 using var searcher = new DirectorySearcher(entry)
 {
     Filter = filter

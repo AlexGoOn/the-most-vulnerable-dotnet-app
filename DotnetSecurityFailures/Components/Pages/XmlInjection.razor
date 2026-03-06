@@ -112,60 +112,60 @@ Parser may use first &lt;role&gt; tag found (admin)!</code></pre>
 @code {
     private const string SafeCode = """
 // CORRECT: Use XElement or XmlDocument API
-var xml = new XElement(\"user\",
-    new XElement(\"name\", fullName),      // Automatically escaped
-    new XElement(\"email\", email),
-    new XElement(\"bio\", bio),
-    new XElement(\"role\", \"user\
+var xml = new XElement("user",
+    new XElement("name", fullName),      // Automatically escaped
+    new XElement("email", email),
+    new XElement("bio", bio),
+    new XElement("role", "user")
 );
 
-// Input: fullName = \"</name><role>admin</role><name>\"
+// Input: fullName = "</name><role>admin</role><name>"
 // XElement escapes to:
 // <name></name><role>admin</role><name></name>
 // Tags are escaped, treated as literal text - attack prevented!
 
 // Alternative: XmlDocument with proper API
 XmlDocument doc = new XmlDocument();
-XmlElement userElement = doc.CreateElement(\"user\;
+XmlElement userElement = doc.CreateElement("user");
 
-XmlElement nameElement = doc.CreateElement(\"name\;
+XmlElement nameElement = doc.CreateElement("name");
 nameElement.InnerText = fullName;  // Auto-escaped
 userElement.AppendChild(nameElement);
 
-XmlElement emailElement = doc.CreateElement(\"email\;
+XmlElement emailElement = doc.CreateElement("email");
 emailElement.InnerText = email;
 userElement.AppendChild(emailElement);
 
-XmlElement roleElement = doc.CreateElement(\"role\;
-roleElement.InnerText = \"user\";  // Always \"user\"
+XmlElement roleElement = doc.CreateElement("role");
+roleElement.InnerText = "user";  // Always "user"
 userElement.AppendChild(roleElement);
 
 doc.AppendChild(userElement);
 """;
     private const string VulnerableCode = """
 // DANGEROUS: String concatenation in XML
-string xml = $@\"<user>
+string xml = $@"<user>
   <name>{fullName}</name>
   <email>{email}</email>
   <bio>{bio}</bio>
   <role>user</role>
-</user>\"; 
+</user>"; 
 
 XmlDocument doc = new XmlDocument();
 doc.LoadXml(xml);
 
 // Extract role from parsed XML
-var roleNode = doc.SelectSingleNode(\"//role\;
+var roleNode = doc.SelectSingleNode("//role");
 string userRole = roleNode?.InnerText; // Gets injected value!
 
-// Input: fullName = \"</name><role>admin</role><name>\"
+// Input: fullName = "</name><role>admin</role><name>"
 // Resulting XML:
 // <user>
 //   <name></name><role>admin</role><name></name>
 //   <email>user@example.com</email>
 //   <role>user</role>
 // </user>
-// userRole = \"admin\" (first node found) - privilege escalation!
+// userRole = "admin" (first node found) - privilege escalation!
 """;
 
     private Vulnerability? vulnerability;

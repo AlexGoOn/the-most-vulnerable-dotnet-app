@@ -98,14 +98,14 @@
 // Keep API keys server-side only
 
 // All requests that require secret API keys should be made from the server-side
-[HttpPost("/api/weather/data]
+[HttpPost("/api/weather/data")]
 [Authorize]
 public async Task<IActionResult> GetWeatherData(
     [FromBody] WeatherRequest request)
 {
     // API key retrieved from secure storage
     var apiKey = await _secretClient.GetSecretAsync(
-        "WeatherApiKey;
+        "WeatherApiKey");
     
     // Backend calls external API
     var weatherData = await _weatherClient.GetDataAsync(
@@ -120,7 +120,7 @@ public async Task<IActionResult> GetWeatherData(
 // DANGEROUS: Exposing API keys to client
 
 // Backend sends key to frontend
-[HttpPost("/api/vulnerabilities/api-keys-exposure/initialize]
+[HttpPost("/api/vulnerabilities/api-keys-exposure/initialize")]
 public IActionResult Initialize([FromBody] InitRequest request)
 {
     var apiKey = GetApiKeyForService(request.Service);
@@ -136,8 +136,8 @@ public IActionResult Initialize([FromBody] InitRequest request)
 
 
 // Even worse: Hardcoded in JavaScript on the client
-const API_KEY = 'sk_live_51H8xYz2eZvKYlo2C9fXqhT8vWx';
-const STRIPE_KEY = 'pk_live_51H8xYz2eZvKYlo2CkjhEqQkV4';
+// const API_KEY = 'sk_live_51H8xYz2eZvKYlo2C9fXqhT8vWx';
+// const STRIPE_KEY = 'pk_live_51H8xYz2eZvKYlo2CkjhEqQkV4';
 
 // Or in mobile app configuration
 public class AppConfig
